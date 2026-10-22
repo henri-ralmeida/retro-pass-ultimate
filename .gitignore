@@ -1,0 +1,9 @@
+/AGENTS.md
+
+# Cache local do editor; pode ser recriado ao abrir o projeto.
+/.godot/
+
+# Credenciais permanecem locais para não expor contas no repositório público.
+.env
+.env.*
+!.env.example
