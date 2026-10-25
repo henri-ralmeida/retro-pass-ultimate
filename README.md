@@ -93,3 +93,7 @@ Verificação do checkpoint: importação Godot e `tools/verify_project.sh` conc
 ## Atari — inserção reversível
 
 A coleção Atari possui o fluxo reversível `Inserir cartucho`, usando o mesmo cartucho nativo e as quatro articulações originais da caixa. Voltar devolve o cartucho à caixa antes de permitir a saída; a perda de foco pausa o movimento e a preferência de movimento reduzido é respeitada. Não há emulação. Os controles de inspeção e manual permanecem disponíveis fora da animação. Mídia ausente ou alterada desabilita a inserção sem criar arte substituta. Consulte `docs/ATARI_INSERTION_INTEGRATION.md` para os limites geométricos, a câmera preservada e os critérios de verificação.
+
+## Entrada automática Atari
+
+Ao confirmar o console, a escolha usa o catálogo disponível daquele sistema. Para Atari, Adventure é a única entrada explicitamente fornecida. A inserção do mesmo cartucho começa uma única vez depois que a transição de entrada termina, sem nova confirmação. Voltar à caixa não reinicia a sequência. Perder foco antes do início cancela a intenção automática e mantém o botão manual; durante o movimento, apenas pausa. O Master System conserva sua seleção existente, sem iniciar a trajetória enquanto a geometria do slot estiver bloqueada. Consulte `docs/AUTOMATIC_ENTRY.md` para os limites e as garantias de cancelamento.

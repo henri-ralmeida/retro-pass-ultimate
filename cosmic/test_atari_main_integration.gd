@@ -49,6 +49,9 @@ func _run() -> void:
   main._advance_dwell(main.dwell_seconds + 1.0)
   _expect(not main.history_open,"Automatic history never interrupts Atari library")
   if not OS.get_environment("RETROPASS_ATARI_MEDIA_MANIFEST").is_empty():
+   _expect(main.library_view.state == "insertion", "Eligible Atari visit autostarts after reduced-motion reveal")
+   main.library_view.go_back()
+   _expect(main.library_view.state == "collection", "Back returns automatic insertion to collection first")
    _expect(main.library_view.inspect("manual"),"Original 3D manual inspection")
    main.library_view.turn_manual(1)
    main.library_view.go_back()

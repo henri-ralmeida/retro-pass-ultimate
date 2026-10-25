@@ -89,6 +89,9 @@ var entry_start_camera_target := Vector3.ZERO
 var entry_start_size := 0.28
 var entry_veil: ColorRect
 var entry_paused := false
+var entry_generation := 0
+var entry_library_id := 0
+var entry_autostart_token := -1
 # Controller configuration is an exclusive modal, not a second HOME input path.
 var controller_panel
 var controller_picker = ControllerHomePicker.new()
@@ -1047,6 +1050,8 @@ func _pointer_left_window() -> void:
 
 func _focus_lost() -> void:
  application_focused = false
+ if is_instance_valid(library_view) and library_view.has_method("cancel_pending_autostart"):
+  library_view.cancel_pending_autostart()
  controller_click_active = false
  if is_instance_valid(controller_panel): controller_panel.focus_changed(false)
  controller_release_elapsed = 0.0
@@ -1469,6 +1474,7 @@ func _build_library() -> void:
  entry_veil.hide()
 
 func _activate_system_library() -> void:
+ entry_generation += 1
  if not library_enabled or not is_instance_valid(sms_library_view): return
  if is_instance_valid(library_view): library_view.close()
  if AtariBridge.handles(systems[current_index]):
@@ -1482,7 +1488,10 @@ func _activate_system_library() -> void:
 
 func enter_library() -> void:
  if _controller_blocks_background(): return
- if library_state != "system" or not scene_active or not application_focused: return
+ if library_state != "system" or not scene_active or not application_focused or not is_instance_valid(library_view): return
+ entry_generation += 1
+ entry_library_id = library_view.get_instance_id()
+ entry_autostart_token = library_view.arm_entry_autostart() if library_view.has_method("arm_entry_autostart") else -1
  reset_dwell()
  auto_history_armed = false
  inspection_dragging = false
@@ -1495,11 +1504,15 @@ func enter_library() -> void:
  ui.hide()
  entry_veil.show()
  if reduced_motion:
-  _finish_library_entry()
+  _finish_library_entry(entry_generation)
   return
  entry_tween = create_tween()
- entry_tween.tween_method(_apply_entry,0.0,1.0,1.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
- entry_tween.tween_callback(_finish_library_entry)
+ entry_tween.tween_method(_apply_entry_for_visit.bind(entry_generation),0.0,1.0,1.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+ entry_tween.tween_callback(_finish_library_entry.bind(entry_generation))
+
+func _apply_entry_for_visit(value: float, expected_generation: int) -> void:
+ if expected_generation != entry_generation or library_state != "entering": return
+ _apply_entry(value)
 
 func _apply_entry(value: float) -> void:
  entry_progress = value
@@ -1516,7 +1529,10 @@ func _apply_entry(value: float) -> void:
  entry_veil.color.a = smoothstep(0.48,0.94,value)
  _update_perspective_box_frame()
 
-func _finish_library_entry() -> void:
+func _finish_library_entry(expected_generation: int = -1) -> void:
+ if expected_generation < 0: expected_generation = entry_generation
+ if expected_generation != entry_generation or library_state != "entering": return
+ if not is_instance_valid(library_view) or library_view.get_instance_id() != entry_library_id: return
  bg_material.set_shader_parameter("entry_warp",0.0)
  library_state = "library"
  _sync_exhibit_visibility()
@@ -1524,14 +1540,26 @@ func _finish_library_entry() -> void:
  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
  library_view.open()
  entry_veil.color.a = 1.0
- if reduced_motion: entry_veil.hide()
+ if reduced_motion:
+  _complete_library_reveal(expected_generation,entry_library_id,entry_autostart_token)
  else:
   entry_tween = create_tween()
   entry_tween.tween_property(entry_veil,"color:a",0.0,0.35)
-  entry_tween.tween_callback(entry_veil.hide)
+  entry_tween.tween_callback(_complete_library_reveal.bind(expected_generation,entry_library_id,entry_autostart_token))
  print("COSMIC_LIBRARY opened template_only=true")
 
+func _complete_library_reveal(expected_generation: int, expected_library_id: int, autostart_token: int) -> void:
+ if expected_generation != entry_generation or library_state != "library": return
+ if not is_instance_valid(library_view) or library_view.get_instance_id() != expected_library_id: return
+ entry_veil.hide()
+ if not scene_active or not application_focused:
+  if library_view.has_method("cancel_pending_autostart"): library_view.cancel_pending_autostart()
+  return
+ if library_view.has_method("complete_entry_autostart"):
+  library_view.complete_entry_autostart(autostart_token)
+
 func leave_library() -> void:
+ entry_generation += 1
  if library_state == "system": return
  if entry_tween and entry_tween.is_valid(): entry_tween.kill()
  entry_paused = false

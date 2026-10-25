@@ -1,11 +1,15 @@
 extends Control
 ## Atari-only 3D collection/inspection checkpoint; deliberately no SMS GameBox or flat manual reader.
 signal exit_requested
+const CatalogChoice = preload("res://cosmic/catalog_choice.gd")
+const VisitAutostart = preload("res://cosmic/visit_autostart.gd")
 const InsertionSession = preload("res://cosmic/atari_insertion_session.gd")
 const Exhibit = preload("res://cosmic/atari_exhibit.gd")
 var host: Node
 var ITEMS: Array[Dictionary] = []
 var current_index := 0
+var catalog_choice = CatalogChoice.new()
+var autostart_intent = VisitAutostart.new()
 var exhibit: Node3D
 var pivot: Node3D
 var viewport: SubViewport
@@ -136,7 +140,28 @@ func _find_manual_leaves() -> void:
   manual_rest.append(leaf.transform)
 
 func begin_catalog_visit() -> void:
- current_index = 0 # Only the explicitly supplied game, never an invented catalogue.
+ # The existing pure catalog policy excludes unavailable/placeholder entries.
+ # Atari currently has only the explicitly supplied Adventure record.
+ catalog_choice.update_catalog(ITEMS)
+ catalog_choice.begin_visit()
+ current_index = maxi(0,catalog_choice.get_selected_index())
+
+func arm_entry_autostart() -> int:
+ # Called only by a successful real enter_library request, not activation/redraw.
+ begin_catalog_visit()
+ return autostart_intent.arm(catalog_choice.get_selected_id())
+
+func cancel_pending_autostart() -> void:
+ autostart_intent.cancel()
+
+func complete_entry_autostart(token: int) -> bool:
+ if token != autostart_intent.generation: return false
+ if state != "collection" or not visible or not _host_flag("application_focused",true) or not _host_flag("scene_active",true):
+  cancel_pending_autostart()
+  return false
+ if not autostart_intent.consume(token,catalog_choice.get_selected_id()): return false
+ if not insertion_ready: return false
+ return start_insertion()
 
 func _load_private_models() -> void:
  if media_loaded: return
@@ -158,6 +183,8 @@ func open() -> void:
  back_button.grab_focus()
 
 func close() -> void:
+ cancel_pending_autostart()
+ catalog_choice.end_visit()
  if state == "closed":
   hide()
   if is_instance_valid(exhibit): exhibit.hide()
@@ -182,6 +209,7 @@ func close() -> void:
  hide()
 
 func inspect(role: String) -> bool:
+ cancel_pending_autostart()
  if state == "insertion": return false
  if state == "closed" or not exhibit.asset_roots.has(role):
   if status: status.text = "Recurso privado ausente; nenhuma substituição criada."
@@ -231,6 +259,7 @@ func _restore_collection() -> void:
  _refresh_status()
 
 func start_insertion() -> bool:
+ cancel_pending_autostart()
  if state != "collection" or not insertion_ready: return false
  cancel_drag()
  state = "insertion"
@@ -276,6 +305,7 @@ func advance_insertion(delta: float, focused: bool = true) -> void:
   _refresh_status()
 
 func _exit_tree() -> void:
+ cancel_pending_autostart()
  if is_instance_valid(exhibit): exhibit.hide()
  insertion_session.teardown()
 
@@ -296,6 +326,7 @@ func _apply_manual_turns() -> void:
    leaf.position.y = 0.0004 + index * 0.0001
 
 func go_back() -> void:
+ cancel_pending_autostart()
  if state == "insertion" and insertion_failed:
   # A deleted/stale node has no valid physical reverse path. Hide before cleanup
   # and explicitly exit, rather than trapping Back or claiming a successful return.
