@@ -287,7 +287,15 @@ func _label(text: String, font_size := 16) -> Label:
 
 func _button(text: String, callback: Callable) -> Button:
  var button := Button.new()
- button.text = text
+ var icon := "settings"
+ var lower := text.to_lower()
+ if "jogador" in lower or "controle" in lower or "entradas" in lower: icon = "gamepad"
+ if "salvar" in lower: icon = "save"
+ if "cancel" in lower or "descartar" in lower or "não compartilhar" in lower: icon = "close"
+ if "voltar" in lower: icon = "back"
+ if "zoom" in lower: icon = "zoom_in" if "+" in text else "zoom_out"
+ if "trocar" in lower: icon = "sort"
+ preload("res://cosmic/ui_icons.gd").iconify(button,icon,text)
  button.accessibility_name = text
  button.custom_minimum_size.y = 48
  button.focus_mode = Control.FOCUS_ALL
@@ -318,7 +326,9 @@ func _rebuild_rows() -> void:
  rows.clear()
  for action in session.draft.actions():
   var row := _button(str(NAMES[action]), func(): begin_capture(action))
-  row.custom_minimum_size.y = 38
+  row.icon = null
+  row.set_meta("binding_content",true)
+  row.custom_minimum_size.y = 48
   row.alignment = HORIZONTAL_ALIGNMENT_LEFT
   row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
   row.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -381,7 +391,11 @@ func _refresh() -> void:
   var other: String = session.conflict_action
   conflict_text.text = "Conflito: %s já usa %s.\nTrocar: %s recebe %s; %s recebe %s." % [NAMES[other], _binding_text(session.candidate), NAMES[selected], _binding_text(session.candidate), NAMES[other], _binding_text(session.draft.bindings[channel][selected])]
  for control in controls:
-  if is_instance_valid(control) and control not in rows.values(): control.accessibility_name = control.text
+  if is_instance_valid(control) and control not in rows.values():
+   if not control.text.is_empty():
+    control.tooltip_text = control.text
+    control.accessibility_name = control.text
+   preload("res://cosmic/ui_icons.gd").iconify(control,str(control.get_meta("ui_icon","settings")),control.tooltip_text)
  notice.text = notice_override if not notice_override.is_empty() else session.notice
  if not session.selected_action.is_empty(): notice.text = "%s: %s" % [NAMES[session.selected_action], notice.text]
  if closing: notice.text = "Solte todas as entradas para voltar com segurança."

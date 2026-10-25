@@ -44,7 +44,7 @@ func _ready() -> void:
  var column := VBoxContainer.new()
  frame.add_child(column)
  close_button = Button.new()
- close_button.text = "Voltar à navegação"
+ preload("res://cosmic/ui_icons.gd").iconify(close_button,"back","Voltar à navegação")
  close_button.pressed.connect(close_panel)
  column.add_child(close_button)
  var scroll := ScrollContainer.new()
@@ -125,7 +125,8 @@ func _finished(_result: Dictionary) -> void:
 
 func _process(_delta: float) -> void:
  if not is_instance_valid(panel): return
- close_button.text = "Voltar à navegação · processo continua" if panel.service.is_busy() else "Voltar à navegação"
+ close_button.tooltip_text = "Voltar à navegação · processo continua" if panel.service.is_busy() else "Voltar à navegação"
+ close_button.accessibility_name = close_button.tooltip_text
  var progress_caption := "Mídia local"
  if panel.service.is_busy():
   var p: Dictionary = panel.service.poll()
