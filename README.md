@@ -86,6 +86,10 @@ O seletor inclui Atari como segundo sistema. A biblioteca contextual permite ins
 
 O fluxo inclui Voltar, foco de teclado/D-pad e perfil de navegação do frontend; não altera o remapeamento de gameplay do Master System. O carregamento dos cinco modelos é adiado até abrir a biblioteca. Mantém a perspectiva Master System aprovada.
 
-Checkpoint, não animação final: as abas originais abrem/fecham e há inspeção, mas a sequência contínua de retirada/encaixe ainda está pendente. Não executa jogos nem emulação. Correspondência exata da edição e licença de redistribuição seguem sem confirmação. QA visual realizado no Godot cloud Linux em 1024×768 e 1152×648; não equivale a teste Windows, GPU do usuário ou gamepad físico.
+No checkpoint inicial descrito acima, as abas originais abriam/fechavam e havia inspeção; a sequência contínua de retirada/encaixe foi adicionada na integração descrita abaixo. Não executa jogos nem emulação. Correspondência exata da edição e licença de redistribuição seguem sem confirmação. QA visual realizado no Godot cloud Linux em 1024×768 e 1152×648; não equivale a teste Windows, GPU do usuário ou gamepad físico.
 
 Verificação do checkpoint: importação Godot e `tools/verify_project.sh` concluídas (53 scripts, persistência em dois processos e auditorias); testes privados de cinco GLBs, biblioteca e alternância SMS↔Atari também passaram. Regressões incluem ausência de mídia, foco/Back remapeado, D-pad contextual, cancelamento e histórico automático. Evidências e complemento privado ficam fora do Git.
+
+## Atari — inserção reversível
+
+A coleção Atari possui o fluxo reversível `Inserir cartucho`, usando o mesmo cartucho nativo e as quatro articulações originais da caixa. Voltar devolve o cartucho à caixa antes de permitir a saída; a perda de foco pausa o movimento e a preferência de movimento reduzido é respeitada. Não há emulação. Os controles de inspeção e manual permanecem disponíveis fora da animação. Mídia ausente ou alterada desabilita a inserção sem criar arte substituta. Consulte `docs/ATARI_INSERTION_INTEGRATION.md` para os limites geométricos, a câmera preservada e os critérios de verificação.

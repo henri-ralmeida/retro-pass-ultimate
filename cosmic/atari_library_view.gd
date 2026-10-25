@@ -1,6 +1,7 @@
 extends Control
 ## Atari-only 3D collection/inspection checkpoint; deliberately no SMS GameBox or flat manual reader.
 signal exit_requested
+const InsertionSession = preload("res://cosmic/atari_insertion_session.gd")
 const Exhibit = preload("res://cosmic/atari_exhibit.gd")
 var host: Node
 var ITEMS: Array[Dictionary] = []
@@ -25,6 +26,13 @@ var manual_rest: Array[Transform3D] = []
 var rest_transforms: Dictionary = {}
 var media_path := ""
 var media_loaded := false
+var insertion_session = InsertionSession.new()
+var insertion_ready := false
+var insertion_notice := ""
+var insertion_returning := false
+var insertion_failed := false
+var _last_insertion_phase := ""
+
 
 func configure(owner_host: Node) -> void:
  host = owner_host
@@ -99,6 +107,7 @@ func _build_ui() -> void:
  action_buttons.box = _button("Inspecionar caixa",func(): inspect("box"))
  action_buttons.cartridge = _button("Cartucho",func(): inspect("cartridge"))
  action_buttons.manual = _button("Manual 3D",func(): inspect("manual"))
+ action_buttons.insert = _button("Inserir cartucho",start_insertion)
  action_buttons.carton = _button("Abrir/fechar caixa",_toggle_carton)
  action_buttons.previous = _button("Página anterior",func(): turn_manual(-1))
  action_buttons.next = _button("Próxima página",func(): turn_manual(1))
@@ -132,6 +141,7 @@ func begin_catalog_visit() -> void:
 func _load_private_models() -> void:
  if media_loaded: return
  media_loaded = true
+ exhibit.hide()
  exhibit.configure(media_path, not media_path.is_empty())
  for key in exhibit.asset_roots:
   rest_transforms[key] = exhibit.asset_roots[key].transform
@@ -148,18 +158,39 @@ func open() -> void:
  back_button.grab_focus()
 
 func close() -> void:
+ if state == "closed":
+  hide()
+  if is_instance_valid(exhibit): exhibit.hide()
+  cancel_drag()
+  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+  return
+ hide()
+ exhibit.hide()
  cancel_drag()
  state = "closed"
- _restore_collection()
+ if insertion_failed:
+  insertion_session.teardown()
+  insertion_ready = false
+  insertion_failed = false
+  media_loaded = false
+  rest_transforms.clear()
+  manual_leaves.clear()
+  manual_rest.clear()
+ else:
+  _restore_collection()
  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
  hide()
 
 func inspect(role: String) -> bool:
+ if state == "insertion": return false
  if state == "closed" or not exhibit.asset_roots.has(role):
   if status: status.text = "Recurso privado ausente; nenhuma substituição criada."
   return false
  cancel_drag()
  _restore_collection()
+ exhibit.hide()
+ insertion_session.teardown()
+ insertion_ready = false
  inspection_role = role
  state = "inspection"
  for key in exhibit.asset_roots:
@@ -168,19 +199,85 @@ func inspect(role: String) -> bool:
   if key == role:
    asset.transform = Transform3D.IDENTITY
  reset_inspection()
+ exhibit.show()
  _refresh_status()
  back_button.grab_focus()
  return true
 
 func _restore_collection() -> void:
+ # Only used for navigation/reset while not in the visible animation state.
+ # Hide before applying source layout; no setup teleport is shown to the user.
+ exhibit.hide()
+ insertion_session.teardown()
+ insertion_ready = false
+ insertion_returning = false
+ insertion_failed = false
  for key in exhibit.asset_roots:
   exhibit.asset_roots[key].visible = true
   exhibit.asset_roots[key].transform = rest_transforms[key]
+ exhibit.set_carton_open(false)
+ exhibit.cartridge_seated = false
  manual_turns = 0
  _apply_manual_turns()
  inspection_role = ""
- reset_inspection()
+ cancel_drag()
+ pivot.transform = Transform3D.IDENTITY
+ zoom = 1.0
+ _frame()
+ if state != "closed" and exhibit.configured:
+  insertion_ready = insertion_session.prepare_hidden(exhibit)
+  insertion_notice = "" if insertion_ready else "Inserção indisponível para esta geometria; inspeção original preservada."
+ if state != "closed": exhibit.show()
  _refresh_status()
+
+func start_insertion() -> bool:
+ if state != "collection" or not insertion_ready: return false
+ cancel_drag()
+ state = "insertion"
+ insertion_returning = false
+ insertion_failed = false
+ _last_insertion_phase = ""
+ if not insertion_session.insert(_host_flag("reduced_motion",false)):
+  insertion_failed = true
+  insertion_notice = "Não foi possível iniciar: recurso alterado. Voltar fecha a biblioteca com segurança."
+  _refresh_status()
+  return false
+ _refresh_status()
+ back_button.grab_focus()
+ return true
+
+func _host_flag(property_name: String, fallback: bool) -> bool:
+ if is_instance_valid(host):
+  for property in host.get_property_list():
+   if property.name == property_name: return bool(host.get(property_name))
+ return fallback
+
+func _process(delta: float) -> void:
+ advance_insertion(delta,_host_flag("application_focused",true) and _host_flag("scene_active",true))
+
+func advance_insertion(delta: float, focused: bool = true) -> void:
+ if state != "insertion" or insertion_failed: return
+ if not insertion_session.tick(delta,focused):
+  # Freeze in place rather than teleporting on an unexpected stale rig. Close
+  # can hide/teardown safely; no other model writer is allowed in this state.
+  insertion_failed = true
+  insertion_notice = "Animação interrompida: recurso alterado ou removido. Voltar fecha a biblioteca com segurança."
+  status.text = insertion_notice
+  return
+ var phase: String = insertion_session.rig.clock.state()
+ if insertion_returning and phase == "closed":
+  state = "collection"
+  insertion_returning = false
+  # Already at the exact inside pose; do not teardown/reconfigure on return.
+  _refresh_status()
+  back_button.grab_focus()
+ elif phase != _last_insertion_phase:
+  _last_insertion_phase = phase
+  _refresh_status()
+
+func _exit_tree() -> void:
+ if is_instance_valid(exhibit): exhibit.hide()
+ insertion_session.teardown()
 
 func turn_manual(direction: int) -> bool:
  if state != "inspection" or inspection_role != "manual" or manual_leaves.size() != 4: return false
@@ -199,7 +296,26 @@ func _apply_manual_turns() -> void:
    leaf.position.y = 0.0004 + index * 0.0001
 
 func go_back() -> void:
- if state == "inspection":
+ if state == "insertion" and insertion_failed:
+  # A deleted/stale node has no valid physical reverse path. Hide before cleanup
+  # and explicitly exit, rather than trapping Back or claiming a successful return.
+  exhibit.hide()
+  insertion_session.teardown()
+  insertion_ready = false
+  exit_requested.emit()
+  return
+ if state == "insertion":
+  cancel_drag()
+  insertion_returning = true
+  # Back always retraces the path; repeated Back does not skip to another scene.
+  if not insertion_session.cancel(_host_flag("reduced_motion",false)):
+   insertion_failed = true
+   insertion_notice = "Recurso alterado; Voltar fecha a biblioteca com segurança."
+   status.text = insertion_notice
+   return
+  advance_insertion(0.0,true)
+  _refresh_status()
+ elif state == "inspection":
   state = "collection"
   _restore_collection()
   back_button.grab_focus()
@@ -207,6 +323,7 @@ func go_back() -> void:
   exit_requested.emit()
 
 func reset_inspection() -> void:
+ if state == "insertion": return
  cancel_drag()
  pivot.rotation = Vector3.ZERO
  zoom = 1.0
@@ -239,15 +356,23 @@ func refresh_controls() -> void: pass
 func _refresh_status() -> void:
  if not is_instance_valid(status): return
  for key in ["box","cartridge","manual"]:
-  action_buttons[key].visible = state != "inspection"
+  action_buttons[key].visible = state == "collection"
   action_buttons[key].disabled = not exhibit.asset_roots.has(key)
+ action_buttons.insert.visible = state == "collection"
+ action_buttons.insert.disabled = not insertion_ready
  action_buttons.carton.visible = state == "inspection" and inspection_role == "box"
  action_buttons.previous.visible = state == "inspection" and inspection_role == "manual"
  action_buttons.next.visible = action_buttons.previous.visible
  action_buttons.previous.disabled = manual_turns == 0
  action_buttons.next.disabled = manual_turns == manual_leaves.size()
  action_buttons.reset.visible = state == "inspection"
- if inspection_role == "manual":
+ if state == "insertion" and insertion_failed:
+  status.text = insertion_notice
+ elif state == "insertion":
+  var labels := {"opening":"Abrindo a caixa", "extracting":"Retirando o cartucho", "aligning":"Alinhando ao console", "inserting":"Encaixando o cartucho", "seated":"Cartucho encaixado", "returning":"Devolvendo à caixa", "closed":"Cartucho guardado"}
+  var phase: String = insertion_session.rig.clock.state()
+  status.text = str(labels.get(phase,"Animação")) + " · mesmo cartucho · sem execução de jogos.\nVoltar desfaz o percurso; a câmera permanece fixa. Encaixe aproximado do modelo."
+ elif inspection_role == "manual":
   status.text = "Manual 3D · " + ["Capa", "Páginas 2–3", "Páginas 4–5", "Páginas 6–7", "Contracapa"][manual_turns] + " · arrastar para girar, roda para ampliar."
  elif state == "inspection":
   status.text = "Inspeção voluntária · arrastar/setas: girar · roda: zoom · R: restaurar · Esc: voltar."
@@ -258,10 +383,11 @@ func _refresh_status() -> void:
    status.text = str(ITEMS[0].title) + " · acervo local · sem execução de jogos."
    if not exhibit.missing.is_empty(): status.text += " Recursos ausentes: " + ", ".join(exhibit.missing)
   if exhibit.asset_roots.has("box") or exhibit.asset_roots.has("cartridge") or exhibit.asset_roots.has("manual"):
-   status.text += "\nInspecione os recursos disponíveis pelos botões. Animação de inserção em desenvolvimento."
+   status.text += "\nInspecione os recursos disponíveis ou insira o cartucho desta entrada."
+  if not insertion_notice.is_empty(): status.text += "\n" + insertion_notice
 
 func _toggle_carton() -> void:
- if inspection_role == "manual": return
+ if state != "inspection" or inspection_role != "box": return
  exhibit.set_carton_open(not exhibit.carton_open)
 
 func _focusable_actions() -> Array[Button]:
@@ -279,6 +405,7 @@ func _move_action_focus(direction: int) -> void:
  available[posmod(current + direction, available.size())].grab_focus()
 
 func _activate_focused_action() -> void:
+ if state == "insertion": return
  var available := _focusable_actions()
  var focused := get_viewport().gui_get_focus_owner()
  if focused in available:
@@ -316,6 +443,9 @@ func handle_event(event: InputEvent) -> bool:
    JOY_BUTTON_DPAD_DOWN: _move_action_focus(1)
    _: return false
   return true
+ if state != "inspection" and (event is InputEventMouseButton or event is InputEventMouseMotion):
+  cancel_drag()
+  return false # Buttons retain GUI ownership; the model/camera cannot move.
  if event is InputEventMouseButton:
   if event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
    cancel_drag()
