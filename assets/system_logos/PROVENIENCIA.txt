@@ -1,0 +1,9 @@
+LOGO MASTER SYSTEM
+Fonte pública: https://commons.wikimedia.org/wiki/File:Sega-master-system-logo.png
+Arquivo: https://upload.wikimedia.org/wikipedia/commons/3/3e/Sega-master-system-logo.png
+Autor atribuído pela página: Sega. Upload de Red Phoenix em 13/10/2014. Consultado em 24/10/2026.
+A página classifica como PD-textlogo (formas/texto simples) e explicita ressalva de marca registrada. Isso não constitui autorização comercial da Sega nem análise jurídica de redistribuição.
+PNG original de 1000×300, com alpha, copiado sem redesenho, alteração de cor ou substituição por fonte. Escalonado proporcionalmente apenas na interface. Representa o Master System ocidental; não é marca Mark III ou Master System II.
+O SVG intitulado Master System Logo.svg no Commons foi deliberadamente evitado: a própria página o descreve como fan-made com fonte incorreta.
+O arquivo de inscrição Power Base já presente na réplica foi preservado, mas não foi utilizado como logotipo da interface.
+SHA256: 5fa11299e14ea3146364ceda1581753f798de77be3e38d946179b7ce13cdc508

@@ -7,3 +7,22 @@
 .env
 .env.*
 !.env.example
+
+# Builds e arquivos locais
+/build/
+/dist/
+*.tmp
+*.log
+*.blend1
+
+# Evidências geradas; manter apenas o diretório necessário aos testes.
+/evidence/*
+!/evidence/cosmic/
+/evidence/cosmic/*
+!/evidence/cosmic/.gitkeep
+
+# Experimentos locais, fora da implementação.
+/assets/cosmic_console/repair/
+/tools/text_diagnostics/
+
+!/evidence/.gdignore

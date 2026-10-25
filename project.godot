@@ -1,0 +1,47 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+run/max_fps=60
+
+config/name="RETRO PASS ULTIMATE"
+run/main_scene="res://cosmic/main.tscn"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="RetroPassUltimate/CosmicPrototype"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+config/icon="res://assets/app/retropass_ultimate.png"
+config/windows_native_icon="res://assets/app/retropass_ultimate.ico"
+
+[display]
+
+window/vsync/vsync_mode=0
+
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/size/window_width_override=1152
+window/size/window_height_override=648
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[environment]
+
+defaults/default_clear_color=Color(0.008, 0.011, 0.027, 1)
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
+limits/opengl/max_renderable_lights=4
+
+[threading]
+
+worker_pool/max_threads=1

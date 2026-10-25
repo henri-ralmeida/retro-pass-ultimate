@@ -1,20 +1,44 @@
-# Retro Pass Ultimate
+# RETRO PASS ULTIMATE
 
-Aplicativo desktop em preparação, inicialmente para Windows, com um quarto 3D como interface para explorar jogos e videogames.
+Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual é **Sistemas no Infinito**: um Master System 3D em fundo cósmico, com inspeção interativa e história do console. Substitui a proposta inicial de quarto 3D registrada no primeiro commit.
 
-O primeiro recorte será um Master System e um jogo: Wonder Boy. A interface será concluída antes da implementação da emulação, para permitir avaliar a navegação, as mídias e as interações do quarto separadamente.
+## Executar
 
-## Estado atual
+1. Clone este repositório ou faça pull das atualizações.
+2. Importe `project.godot` no Godot 4.6.3 e aguarde a importação dos recursos. Essa é a versão efetivamente testada; versões mais novas ainda precisam de validação.
+3. Pressione F5. O renderizador é Compatibility.
 
-O projeto está na discussão da fundação. Este repositório contém apenas a documentação inicial e as regras de exclusão do versionamento; ainda não há aplicativo executável.
+Este repositório contém código-fonte, não um executável Windows já validado. Blender não é necessário para executar.
 
-## Direção da experiência
+## Interações
 
-- Entrada com visão geral do quarto, destacando a TV e o Master System.
-- Atmosfera de fim de tarde, com luz da janela e luminária.
-- Navegação por pontos de câmera guiados.
-- Réplicas visuais fiéis dos videogames, com modelos e iluminação eficientes para manter a interface leve.
+- I / Inspecionar: manipulação 3D separada da história.
+- Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
+- R / Restaurar: orientação e zoom iniciais. Esc / I / Voltar: sair.
+- M: reduzir movimento.
+- Permanecer no console por oito segundos elegíveis abre a história; não interrompe inspeção.
+- Perder foco preserva a imagem e o estado, cancelando o arraste.
 
-## Conteúdo e conquistas
+## Escopo atual
 
-Jogos, mídias pessoais, credenciais e saves não são distribuídos neste repositório. A integração com RetroAchievements será opcional. O modo Hardcore é uma intenção futura, sujeita aos requisitos e à aprovação do serviço; a existência deste repositório público não representa homologação.
+Somente Master System. Sem ROMs, emulação, biblioteca conectada ou integração RetroAchievements. A seleção emite um sinal preparado para integração futura. Nenhuma homologação Hardcore é alegada.
+
+## Testes
+
+Execute no diretório do projeto, por exemplo:
+
+    godot --headless --path . --script cosmic/test_selection.gd
+    godot --headless --path . --script cosmic/test_history.gd
+    godot --headless --path . --script cosmic/test_inspection.gd
+    godot --headless --path . --script cosmic/test_focus_visibility.gd
+    godot --headless --path . --script cosmic/test_zoom_stress.gd
+
+Em Linux/macOS, `bash tools/verify_project.sh` executa a importação, a suíte e a auditoria de imagens antigas em sequência.
+
+Relatórios gerados ficam em `evidence/cosmic/`, fora do versionamento. Testes headless não substituem QA visual, teste Windows ou validação na GPU do usuário.
+
+## Recursos e limites
+
+Veja `LEIA-ME_SISTEMAS_NO_INFINITO.md` e os documentos de procedência junto aos assets. Fontes incluem licenças OFL. Nomes e marcas pertencem aos seus titulares; não há licença comercial presumida para marcas. As inscrições foram reconstruídas em SVG e rasterizadas em 4K, sem a fotografia de loja usada no protótipo anterior. O runtime limita o atlas a 2K sem perdas, com mipmaps e filtro anisotrópico; os fontes 4K permanecem editáveis. A tipografia do wordmark é uma aproximação documentada, não a fonte industrial original.
+
+Não incluir jogos, saves, credenciais, caches, builds ou mídias pessoais neste repositório público.

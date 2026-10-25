@@ -1,0 +1,15 @@
+{
+  "generated_from": "Vector paths, type outlines and procedural shapes only; no photograph is read by this script.",
+  "fonts": {
+    "functional": "Liberation Sans Regular, SIL OFL 1.1",
+    "wordmark_text": "Liberation Serif Bold, SIL OFL 1.1; documented approximation, not certified factory font"
+  },
+  "sega_source": "https://commons.wikimedia.org/wiki/File:SEGA_logo.svg",
+  "sega_direct": "https://upload.wikimedia.org/wikipedia/commons/1/13/SEGA_logo.svg",
+  "sega_sha256": "1318476f255d611d39ff67f1e5d4cb5891a35e35fcaf77885873c191b26148a9",
+  "output_sha256": {
+    "raster/master_system_atlas_4k.png": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c",
+    "raster/master_system_wordmark_4k.png": "a0dbaf4ae4c0f973b3f5648f85f996ae420bf1a8c1b2cc96facb12a4546f944d"
+  },
+  "output_path_base": "Relative to this manifest in source_art"
+}
