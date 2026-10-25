@@ -10,6 +10,10 @@ Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual 
 
 Este repositório contém código-fonte, não um executável Windows já validado. Blender não é necessário para executar.
 
+## PDF local: etapa parcial
+
+A conversão automática de PDF **não está habilitada**: falta backend com isolamento de arquivos/rede e versão verificada. A fila informa a indisponibilidade sem abrir o PDF; manuais já em imagens continuam suportados. Há contrato de manifesto e diagnóstico com PDF sintético, não conversão produtiva nem retomada/persistência PDF completas. [Estado, evidências e pendências](docs/MANUAIS_PDF.md).
+
 ## Interações
 
 - X entra no sistema e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.

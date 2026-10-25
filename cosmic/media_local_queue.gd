@@ -1,6 +1,7 @@
 extends RefCounted
 ## Bounded local reads only. Does not decode, copy, modify or publish media.
 ## One owner per journal. Call tick() from a future worker, NOT the rendering UI.
+const Pdf = preload("res://cosmic/manual_pdf_service.gd")
 const Config = preload("res://cosmic/media_optin_config.gd")
 const Planner = preload("res://cosmic/media_optin_plan.gd")
 const CHUNK_BYTES := 256 * 1024
@@ -73,6 +74,12 @@ func tick() -> Dictionary:
   var path: String = str(state.config.root).path_join(job.relative_path)
   if not _safe_path(path):
    _fail("unsafe_or_linked_path")
+   return progress()
+  # Consent is for this exact plan, not permission to run an uncontained parser.
+  # The failed job remains in the journal and retry/resume evaluates capability
+  # again; never report a hashed PDF as a converted/usable manual.
+  if path.get_extension().to_lower() == "pdf" and not Pdf.capability().available:
+   _fail("pdf_backend_unavailable")
    return progress()
   _file = FileAccess.open(path, FileAccess.READ)
   if _file == null:

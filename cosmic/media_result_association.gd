@@ -4,6 +4,7 @@ extends RefCounted
 ## never creates textures. Hash + bounded decode validates format, not edition.
 const Inventory = preload("res://cosmic/catalog_import.gd")
 const Artwork = preload("res://cosmic/library_artwork_cache.gd")
+const Pdf = preload("res://cosmic/manual_pdf_service.gd")
 const Config = preload("res://cosmic/media_optin_config.gd")
 const SURFACES := {
  "cover_front":"cover_front", "boxart":"cover_front", "cover_back":"cover_back", "boxback":"cover_back",
@@ -71,10 +72,6 @@ static func build(result: Dictionary, items: Array, cancelled: Callable = Callab
     output.issues.append(issue)
     continue
    var category := category_for(tag)
-   if tag == "manual" and relative.get_extension().to_lower() == "pdf":
-    issue.status = "pdf_not_converted"
-    output.issues.append(issue)
-    continue
    if not category in config.categories or not indices.has(key) or indices[key].size() != 1:
     issue.status = "missing_or_ambiguous_exact_identity"
     output.issues.append(issue)
@@ -88,7 +85,7 @@ static func build(result: Dictionary, items: Array, cancelled: Callable = Callab
     output.issues.append(issue)
     continue
    if tag == "manual":
-    if not relative.get_extension().to_lower() in ["png", "jpg", "jpeg"] or str(item.get("manual_item_id", item.get("id", ""))) != str(item.get("id", "")) or str(item.get("manual_game_id", item.get("id", ""))) != str(item.get("id", "")):
+    if not relative.get_extension().to_lower() in ["png", "jpg", "jpeg", "pdf"] or str(item.get("manual_item_id", item.get("id", ""))) != str(item.get("id", "")) or str(item.get("manual_game_id", item.get("id", ""))) != str(item.get("id", "")):
      issue.status = "manual_identity_or_format_unsupported"
      output.issues.append(issue)
      continue
@@ -120,6 +117,11 @@ static func build(result: Dictionary, items: Array, cancelled: Callable = Callab
    output.issues.append({"status":"ambiguous_surface", "surface":entries[0].field})
    continue
   var candidate: Dictionary = entries[0]
+  if candidate.tag == "manual" and str(candidate.path).get_extension().to_lower() == "pdf":
+   var pdf_issue: Dictionary = candidate.issue.duplicate()
+   pdf_issue.status = Pdf.capability().status
+   output.issues.append(pdf_issue)
+   continue
   if candidate.job.get("status", "") != "done":
    var failed_issue: Dictionary = candidate.issue.duplicate()
    failed_issue.status = "source_processing_failed"
