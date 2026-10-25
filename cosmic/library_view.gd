@@ -9,6 +9,7 @@ const GameBox = preload("res://cosmic/game_box.gd")
 const BoxPresentation = preload("res://cosmic/box_presentation.gd")
 const CatalogWindow = preload("res://cosmic/library_window.gd")
 const CatalogChoice = preload("res://cosmic/catalog_choice.gd")
+const CatalogImport = preload("res://cosmic/catalog_import.gd")
 var catalog_choice := CatalogChoice.new()
 var catalog_visit_started := false
 var catalog_window := CatalogWindow.new()
@@ -41,6 +42,7 @@ var manual_reader: Control
 var manual_button: Button
 var item_wheel: TextureRect
 var manual_status := "Manual indisponível para este jogo."
+var source_inventory_display := false
 
 func _load_items(path_override: String = "") -> void:
  ITEMS.clear()
@@ -82,6 +84,7 @@ func _load_items(path_override: String = "") -> void:
  if ITEMS.is_empty():
   ITEMS.append({"id":"unavailable", "title":"Acervo indisponível", "subtitle":"MASTER SYSTEM · SEM CAPAS LOCAIS", "accent":"9dd8f2", "description":"Nenhuma capa local disponível. A caixa permanece sem arte, sem substituições fictícias."})
 
+ CatalogImport.apply_inventory_subtitles(ITEMS)
  catalog_choice.update_catalog(ITEMS)
 
 func begin_catalog_visit() -> void:
@@ -425,8 +428,10 @@ func _sync_card_window() -> void:
   var card := cards[int(entry.slot)]
   var data: Dictionary = ITEMS[int(entry.index)]
   card.set_meta("catalog_index",int(entry.index))
-  card.accessibility_name = "Selecionar caixa: " + str(data.title)
-  card.tooltip_text = str(data.title)
+  var label := str(data.title) + (" · " + str(data.subtitle) if CatalogImport.is_source_inventory(data) else "")
+  card.accessibility_name = "Selecionar caixa: " + label
+  card.tooltip_text = label
+  if CatalogImport.is_source_inventory(data): card.tooltip_text += "\nVariante do arquivo ou região indicada no inventário; identificação não verificada."
   card.get_node("CardTitle").text = str(data.title)
   card.get_node("CardSubtitle").text = str(data.subtitle)
   card.get_node("CardNumber").text = "%02d" % (int(entry.index)+1)
@@ -564,8 +569,17 @@ func _select(index: int) -> void:
  item_title.tooltip_text = data.title
  item_title.accessibility_name = data.title
  item_subtitle.text = data.subtitle
+ item_subtitle.tooltip_text = data.subtitle
  description.text = data.description
- chapter.text = "%02d  /  ACERVO LOCAL" % (index+1)
+ var from_inventory := CatalogImport.is_source_inventory(data)
+ chapter.text = "%02d  /  %s" % [index+1, "INVENTÁRIO DE ORIGEM" if from_inventory else "ACERVO LOCAL"]
+ if scan_thread == null and (from_inventory or source_inventory_display != from_inventory):
+  disclosure.text = "Inventário de origem · presença local não verificada · sem execução" if from_inventory else "Acervo local · sem execução"
+  disclosure.tooltip_text = ""
+ source_inventory_display = from_inventory
+ if from_inventory:
+  item_title.tooltip_text += "\n" + str(data.subtitle)
+  item_title.accessibility_name += " · " + str(data.subtitle)
  chapter.add_theme_color_override("font_color",Color(data.accent))
  position_label.text = "%02d  /  %02d" % [index+1,ITEMS.size()] if not ITEMS.is_empty() and str(ITEMS[index].get("id","")) != "unavailable" else "00  /  00"
  _sync_card_window()
@@ -573,7 +587,7 @@ func _select(index: int) -> void:
   var card := cards[card_index]
   var active := int(card.get_meta("catalog_index",-1)) == current_index
   card.add_theme_stylebox_override("normal",_panel_style(Color(0.075,0.14,0.22,0.85) if active else Color(0.04,0.06,0.12,0.66),Color("709ebd") if active else Color(0.42,0.55,0.75,0.23)))
-  card.accessibility_description = "Capa selecionada" if active else "Outra caixa do acervo local"
+  card.accessibility_description = "Capa selecionada" if active else "Outra caixa do catálogo"
  _refresh_card_textures()
  _build_neighbors()
  reset_inspection()
@@ -946,8 +960,9 @@ func layout() -> void:
   cards[index].visible = not inspect_mode and ITEMS.size() > 1 and index in visible_indices
   var slot := visible_indices.find(index)
   cards[index].position = Vector2((s.x-row_width)*0.5+slot*(card_width+8),s.y-180)
-  cards[index].size = Vector2(card_width,34)
-  cards[index].get_node("CardTitle").position = Vector2(10,7)
+  var from_inventory := CatalogImport.is_source_inventory(ITEMS[int(cards[index].get_meta("catalog_index",0))])
+  cards[index].size = Vector2(card_width,48 if from_inventory else 34)
+  cards[index].get_node("CardTitle").position = Vector2(10,4 if from_inventory else 7)
   var card_title: Label = cards[index].get_node("CardTitle")
   card_title.clip_text = true
   card_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -957,6 +972,12 @@ func layout() -> void:
   card_textures[index].visible = false
   for child in cards[index].get_children():
    if child is Label and child.name != "CardTitle": child.visible = false
+  var card_subtitle: Label = cards[index].get_node("CardSubtitle")
+  card_subtitle.visible = from_inventory
+  card_subtitle.position = Vector2(10,26)
+  card_subtitle.size = Vector2(card_width-20,18)
+  card_subtitle.clip_text = true
+  card_subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
  var approach_weight := BoxPresentation._ease(approach_progress)
  viewport_container.position = Vector2(margin+24,lerpf(102.0,88.0,approach_weight))
  viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-lerpf(324.0,292.0,approach_weight)))

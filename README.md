@@ -15,7 +15,7 @@ Este repositório contém código-fonte, não um executável Windows já validad
 - X entra no sistema e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.
 - I / Inspecionar: manipulação 3D livre separada da história, tanto no console quanto na caixa. A caixa se aproxima fechada; arraste para escolher qualquer ângulo, sem giro automático nem presets de faces.
 - X / Confirmar na caixa: aproxima, abre a tampa pela dobradiça e apresenta o mesmo cartucho. Z / Voltar recolhe o cartucho, fecha a caixa e retorna à coleção. Movimento reduzido aplica os estados sem transição.
-- Manual, quando a caixa está apresentada: abre as páginas locais daquele item, se fornecidas. Setas navegam, roda ou +/− ampliam, arraste desloca a página, R ajusta e Z fecha somente o leitor.
+- Manual, quando a caixa está apresentada: libera o mesmo livreto das presilhas e aproxima suas folhas 3D. Ombros/PgUp/PgDn viram folhas, direções escolhem a face, X amplia a leitura no próprio livro; roda/+− ajustam zoom e arraste desloca. Z sai da ampliação, depois devolve o livreto. Veja o mapa verificado em `docs/CONTROLES_MANUAL_RETROBAT.md`.
 - Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
 - R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
 - M: pausar/retomar movimento.
@@ -34,6 +34,14 @@ Somente Master System. Entrar aproxima a câmera do console e revela uma bibliot
 A seleção exibe dois controles reutilizados, cabos com comprimento nominal de 2 m organizados em voltas suaves, plugues moldados com alívio de tensão, caixa aberta ao fundo e um único cartucho do mesmo item do catálogo. Caixa e cartucho mantêm a escala nativa; ao voltar da biblioteca, o conjunto acompanha a seleção atual, sem misturar mídias. A caixa de fundo fica à esquerda, sem sobrepor o console, e mostra verso, lombada e frente em perspectiva própria; a câmera e os controles do console são preservados. A inspeção dedicada continua isolando o console. O carregador opcional de hardware local restaura os materiais e estampas REV2; sem esse recurso, a interface informa a ausência das texturas em vez de apresentar o controle neutro como equivalente. Veja [recursos locais](docs/HARDWARE_LOCAL.md) e [geometria da exposição](docs/EXPOSICAO_3D.md).
 
 O encaixe é uma apresentação estática com abertura visual reversível da carcaça, não a animação de inserção ainda planejada. A articulação da caixa foi corrigida no runtime sem modificar sua geometria fechada ou o GLB original. Labels só aparecem quando fornecidos explicitamente para aquele item. O manual original de Wonder Boy foi validado em configuração privada com suas 32 páginas; as digitalizações não fazem parte deste repositório. Wheel original não foi fornecida nessa configuração: quando houver uma imagem vinculada à entrada ela substitui o título, e quando não houver o texto legível permanece. O leitor integrado recebe o mesmo livreto sob as presilhas, apresenta folhas 3D e oferece leitura ampliada das páginas PNG/JPEG locais vinculadas ao jogo, sem substituir páginas ausentes; conversão de PDF no aplicativo e obtenção online permanecem pendentes. Veja [manual local](docs/MANUAL_LOCAL.md). A abertura da caixa e a extração do cartucho são apresentação, não execução nem inserção animada no console.
+
+## Catálogo e variantes
+
+A coleção usa três cards e até cinco caixas residentes. O sorteio considera entradas elegíveis, mantém a escolha durante foco/layout/inspeção e evita repetição imediata quando uma nova visita explícita tem alternativas. Variantes continuam distintas pelo sistema e caminho relativo, mesmo compartilhando um ID externo.
+
+`cosmic/catalog_import.gd` adapta um JSON de inventário fornecido explicitamente, sem ler ROMs, diretórios ou mídias. Master System e Mark III são grupos separados. Entradas ausentes ficam consultáveis, mas não entram no sorteio. Sem raiz local configurada, as referências de mídia não são tratadas como imagens presentes nesta máquina.
+
+A UI identifica esse modo como inventário de origem, sem alegar presença local. Os cards mostram indícios do nome do arquivo (região, idioma e revisão quando fornecidos), não uma edição confirmada. Basename e ordinal distinguem rótulos coincidentes sem expor diretórios privados. Cache e virtualização são limitados; testes com mil registros sintéticos não representam artes reais carregadas.
 
 ## Testes
 

@@ -110,7 +110,66 @@ static func adapt(document: Variant, source_group: String = "Master System", loc
   result.counts.items += 1
   result.counts[status] += 1
   if item.available_for_random: result.counts.available_for_random += 1
+ apply_inventory_subtitles(result.items)
  return result
+
+static func is_source_inventory(item: Dictionary) -> bool:
+ return item.get("availability_basis", "") == "source_inventory" and not item.get("local_presence_verified", false)
+
+static func apply_inventory_subtitles(items: Array) -> void:
+ # Presentation only: never changes identity, order, eligibility or media.
+ # Also used by the view for manifests exported before these labels existed.
+ var groups := {}
+ for item in items:
+  if not item is Dictionary or not is_source_inventory(item): continue
+  item["subtitle"] = _inventory_subtitle(item)
+  var key := JSON.stringify([str(item.get("title", "")).to_lower(), item.subtitle.to_lower()])
+  if not groups.has(key): groups[key] = []
+  groups[key].append(item)
+ for group in groups.values():
+  if group.size() < 2: continue
+  var used := {}
+  for item in group:
+   var basename := _inventory_basename(item)
+   if not basename.is_empty() and not str(item.subtitle).ends_with(" · " + basename):
+    item.subtitle += " · " + basename
+   var label: String = item.subtitle
+   # Same basename in different source folders still needs a distinct label,
+   # but a source directory must never be exposed to disambiguate it.
+   var ordinal := int(used.get(label, 0)) + 1
+   used[label] = ordinal
+   if ordinal > 1: item.subtitle += " · #%d" % ordinal
+
+static func _inventory_subtitle(item: Dictionary) -> String:
+ var parts: Array[String] = []
+ for raw in _string_array(item.get("filename_variant_hints", [])):
+  var hint := _compact_display_hint(raw)
+  if hint.is_empty() or hint in parts: continue
+  # Keep revisions readable before a long list of languages can be clipped.
+  if hint.to_lower().begins_with("rev "): parts.push_front(hint)
+  else: parts.append(hint)
+ if not parts.is_empty(): return "Arquivo · " + " · ".join(parts)
+ var region := _compact_display_hint(_text(item.get("region_hint", "")))
+ if not region.is_empty(): return "Região indicada · " + region
+ var basename := _inventory_basename(item)
+ return "Arquivo · " + basename if not basename.is_empty() else "Variante não informada"
+
+static func _inventory_basename(item: Dictionary) -> String:
+ var relative := safe_relative_path(item.get("relative_path", ""))
+ return relative.get_file().get_basename() if not relative.is_empty() else ""
+
+static func _compact_display_hint(raw: String) -> String:
+ var hint := raw.strip_edges()
+ # Hints are labels, never an alternate route to display a private path.
+ if _has_controls(hint) or "/" in hint or "\\" in hint or ":" in hint: return ""
+ var regions := {"europe":"EU", "eu":"EU", "brazil":"BR", "br":"BR", "usa":"US", "us":"US", "japan":"JP", "jp":"JP", "world":"MUNDO", "wor":"MUNDO", "wr":"MUNDO"}
+ var tokens: Array[String] = []
+ for value in hint.split(",", false):
+  var token := value.strip_edges()
+  if token.is_empty(): continue
+  token = str(regions.get(token.to_lower(), token))
+  if not token in tokens: tokens.append(token)
+ return "/".join(tokens)
 
 static func safe_relative_path(raw: Variant) -> String:
  if not raw is String: return ""

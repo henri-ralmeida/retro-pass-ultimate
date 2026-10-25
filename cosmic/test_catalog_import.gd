@@ -27,6 +27,7 @@ func run() -> void:
  _test_scoping_status_and_identity()
  _test_path_validation()
  _test_media_contract()
+ _test_inventory_labels()
  _test_json_io_and_errors()
  _test_private_catalog()
  print("CATALOG_IMPORT: ", assertions, " assertions; ", failures.size(), " failures")
@@ -131,6 +132,52 @@ func _test_media_contract() -> void:
  var unsupported: Dictionary = Import.adapt({"games": [item]}, "Master System", "/synthetic").items[0]
  check(unsupported.cover_front.is_empty() and unsupported.cover_back.is_empty() and unsupported.manual_pdf.is_empty(), "Unsupported extensions and source-missing media are not runtime-loadable")
  check(unsupported.media_metadata.boxback.status == "missing", "Missing artwork stays explicit in metadata")
+
+func _test_inventory_labels() -> void:
+ var first := entry("Synthetic folder/Synthetic (Europe, Brazil).zip")
+ first.region_hint = "jp"
+ first.filename_variant_hints = ["Europe, Brazil", "En"]
+ var revision := first.duplicate(true)
+ revision.path = "Synthetic folder/Synthetic (Europe, Brazil) (Rev 1).zip"
+ revision.filename_variant_hints = ["Europe, Brazil", "En", "Rev 1"]
+ var result := Import.adapt({"games": [first, revision]})
+ check(result.items[0].title == result.items[1].title, "Original shared titles are never renamed to create variants")
+ check(result.items[0].subtitle == "Arquivo · EU/BR · En", "Filename hints identify their source and compact region labels")
+ check(result.items[1].subtitle == "Arquivo · Rev 1 · EU/BR · En", "Revision remains visible before lower-priority language details")
+ check(not "JP" in result.items[0].subtitle, "Generic scraper region never overrides conflicting filename hints")
+ var snapshot := JSON.stringify(result.items)
+ Import.apply_inventory_subtitles(result.items)
+ check(JSON.stringify(result.items) == snapshot, "Reapplying display labels to an exported manifest is idempotent")
+ var no_hints := entry("Synthetic private folder/Synthetic Variant A.zip")
+ no_hints.region_hint = ""
+ no_hints.filename_variant_hints = []
+ var fallback: Dictionary = Import.adapt({"games": [no_hints]}).items[0]
+ check(fallback.subtitle == "Arquivo · Synthetic Variant A", "No-hint fallback exposes only the basename without extension")
+ no_hints.region_hint = "us,eu"
+ check(Import.adapt({"games": [no_hints]}).items[0].subtitle == "Região indicada · US/EU", "Metadata-only region fallback is explicitly an indication")
+ var same_hints := first.duplicate(true)
+ same_hints.path = "Another synthetic folder/Synthetic Alternate.zip"
+ var tied := Import.adapt({"games": [first, same_hints]})
+ check(tied.items[0].subtitle != tied.items[1].subtitle, "Equal-title equal-hint records use basename disambiguation")
+ check(not "folder" in tied.items[0].subtitle and not "folder" in tied.items[1].subtitle, "Disambiguation never includes source directories")
+ same_hints.path = "Another synthetic folder/Synthetic (Europe, Brazil).zip"
+ tied = Import.adapt({"games": [first, same_hints]})
+ check(tied.items[0].subtitle != tied.items[1].subtitle and tied.items[1].subtitle.ends_with("#2"), "Identical basenames remain distinct without revealing their folders")
+ snapshot = JSON.stringify(tied.items)
+ Import.apply_inventory_subtitles(tied.items)
+ check(JSON.stringify(tied.items) == snapshot, "Basename and ordinal fallbacks never accumulate on reload")
+ no_hints.filename_variant_hints = ["C:\\Synthetic private folder", "../Synthetic private folder", "https://synthetic.invalid", "bad\nlabel"]
+ no_hints.region_hint = ""
+ check(Import.adapt({"games": [no_hints]}).items[0].subtitle == "Arquivo · Synthetic Variant A", "Path-like or control-containing hints never become UI text")
+ var local := {"id":"synthetic-local", "title":"Synthetic local", "subtitle":"LOCAL LABEL"}
+ var verified := {"id":"synthetic-verified", "availability_basis":"source_inventory", "local_presence_verified":true, "subtitle":"VERIFIED LABEL"}
+ Import.apply_inventory_subtitles([local, verified])
+ check(local.subtitle == "LOCAL LABEL" and verified.subtitle == "VERIFIED LABEL", "Legacy local and explicitly verified labels are preserved")
+ var unchanged: Dictionary = result.items[1].duplicate(true)
+ unchanged.erase("subtitle")
+ var rebuilt: Dictionary = Import.adapt({"games": [revision]}).items[0]
+ rebuilt.erase("subtitle")
+ check(JSON.stringify(unchanged) == JSON.stringify(rebuilt), "Display disambiguation never changes identity, media or random eligibility")
 
 func _test_json_io_and_errors() -> void:
  for bad in [null, [], {}, {"games": null}, {"games": "not an array"}]:
