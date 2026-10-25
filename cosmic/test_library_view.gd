@@ -57,6 +57,19 @@ func _assert_framing(view: Control, label: String) -> void:
  check(center.distance_to(Vector2(0.5,0.5)) < 0.002,label+": centered pivot")
 
 func run() -> void:
+ # Data-only second entry verifies multi-item carousel without shipping fake art.
+ var manifest: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/local_box_art/manifest.json")) if FileAccess.file_exists("res://assets/local_box_art/manifest.json") else {"items":[]}
+ var fixture_items: Array = []
+ for raw in manifest.get("items", []):
+  var item: Dictionary = raw.duplicate(true)
+  for field in ["cover_front","cover_back","cover_spine","model_path","uv_path","art_root"]:
+   if item.has(field): item[field] = ProjectSettings.globalize_path("res://assets/local_box_art/" + str(item[field]))
+  fixture_items.append(item)
+ if fixture_items.is_empty(): fixture_items.append({"id":"test_one","title":"Wonder Boy"})
+ fixture_items.append({"id":"test_missing", "title":"QA unavailable", "subtitle":"TEST ONLY"})
+ var fixture := "user://library_view_manifest.json"
+ FileAccess.open(fixture,FileAccess.WRITE).store_string(JSON.stringify({"items":fixture_items}))
+ OS.set_environment("RETROPASS_BOX_ART_MANIFEST",fixture)
  root.size = Vector2i(1152,648)
  var scene = load("res://cosmic/main.tscn").instantiate()
  scene.input_profile.config_path = "res://evidence/cosmic/library_view_fixture.cfg"
@@ -70,13 +83,16 @@ func run() -> void:
  var view = scene.library_view
  view.exit_requested.connect(func(): exits += 1)
  check(view.visible and not view.inspect_mode,"Library opens in collection mode")
- check(view.current_index == 0 and view.item_title.text == "Alex Kidd","Alex Kidd is first selected concept")
- check("capas fictícias" in view.disclosure.text and "sem jogos" in view.disclosure.text,"Always-visible disclosure identifies concept-only library")
- check(view.cards.size() == 2 and view.card_textures[0].texture != null and view.card_textures[1].texture != null,"Both fictional cards have imported front illustrations")
- check(view.box.get_parent() == view.pivot and view.model_bounds.size.z > 0.30,"True volumetric box parented to centered pivot")
+ check(view.current_index == 0 and view.item_title.text == "Wonder Boy","Manifest first item is selected")
+ check("capas originais" in view.disclosure.text and "sem jogos" in view.disclosure.text,"Always-visible disclosure identifies concept-only library")
+ check(view.cards.size() == 2 and view.card_textures[1].texture == null,"Missing artwork stays blank rather than inventing a cover")
+ check(view.box.get_parent() == view.pivot and view.model_bounds.size.z > 0.05,"True volumetric box parented to centered pivot")
+ check(view.camera.projection == Camera3D.PROJECTION_PERSPECTIVE,"Carousel uses perspective projection")
+ check(view.neighbor_boxes.size() == 1,"One neighbor per distinct alternate item, no duplicates")
+ check(view.neighbor_boxes[0].position.z < 0 and not is_zero_approx(view.neighbor_boxes[0].rotation.y),"Neighbor recedes and turns in perspective")
  check(not view.reset_button.visible and not view.presets.visible,"Inspection-only tools start hidden")
  view.navigate(-1)
- check(view.current_index == 1 and view.item_title.text == "Wonder Boy","Previous wraps to second concept")
+ check(view.current_index == 1 and view.item_title.text == "QA unavailable","Previous wraps to second data entry")
  view.navigate(1)
  check(view.current_index == 0,"Next wraps to first concept")
  view.cards[1].pressed.emit()
@@ -90,6 +106,14 @@ func run() -> void:
  check(view.inspect_mode and view.reset_button.visible and view.presets.visible,"Real inspect action opens dedicated tools")
  check(not view.cards[0].visible and not view.previous_button.visible,"Collection click targets hidden during inspection")
  check(view.model_bounds.get_center().is_zero_approx(),"Volumetric box has centered local bounds")
+ if view.box.can_open():
+  check(view.box.get_meta("original_room_geometry",false),"Selected box reuses original room geometry")
+  view.lid_button.pressed.emit()
+  check(view.box.opened and is_equal_approx(view.box.lid.rotation.z,deg_to_rad(115)),"Original hinge opens to room angle")
+  view.cartridge_button.pressed.emit()
+  check(view.box.cartridge_out,"Original separate cartridge can be extracted")
+  view.reset_inspection()
+  check(not view.box.opened and not view.box.cartridge_out,"Restore safely stows cartridge and closes lid")
  var origin: Vector3 = view.pivot.global_position
  view.rotate_inspection(Vector2(70,45))
  check(view.pivot.global_position.is_equal_approx(origin),"Rotation never translates box center")

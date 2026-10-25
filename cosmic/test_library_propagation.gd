@@ -139,7 +139,8 @@ func run() -> void:
  await send(axis(JOY_AXIS_LEFT_X, 0.0))
 
  # Tab and pointer events must still reach actual GUI controls.
- library.next_button.grab_focus()
+ if library.ITEMS.size() > 1: library.next_button.grab_focus()
+ else: library.motion_button.grab_focus()
  var expected_index: int = (int(library.current_index) + 1) % library.ITEMS.size()
  await tap_key(KEY_ENTER)
  check(library.current_index == expected_index, "Focused next button receives Enter exactly once")
@@ -147,11 +148,14 @@ func run() -> void:
  var expected_focus: Node = before_tab.get_node(before_tab.focus_next)
  await tap_key(KEY_TAB)
  check(root.gui_get_focus_owner() == expected_focus, "Tab propagates to the library's explicit focus ring")
- var target_index: int = (int(library.current_index) + 1) % library.ITEMS.size()
- var target_position: Vector2 = library.cards[target_index].get_global_rect().get_center()
- await send(mouse(target_position, true))
- await send(mouse(target_position, false))
- check(library.current_index == target_index, "Pointer clicks still select real collection cards through GUI propagation")
+ if library.ITEMS.size() > 1:
+  var target_index: int = (int(library.current_index) + 1) % library.ITEMS.size()
+  var target_position: Vector2 = library.cards[target_index].get_global_rect().get_center()
+  await send(mouse(target_position, true))
+  await send(mouse(target_position, false))
+  check(library.current_index == target_index, "Pointer clicks still select real collection cards through GUI propagation")
+ else:
+  check(not library.cards[0].visible and library.scan_button.is_visible_in_tree(), "Single-entry collection avoids redundant cards and keeps real scan control")
 
  # Focus loss cancels drag and cached analog motion; input cannot leak to GUI.
  await tap_key(KEY_Q)

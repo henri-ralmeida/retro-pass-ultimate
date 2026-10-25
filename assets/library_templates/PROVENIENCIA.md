@@ -1,4 +1,6 @@
-# Modelos fictícios de caixa
+# Estudos antigos de capa, fora da apresentação atual
+
+Estes arquivos estão preservados como histórico. A biblioteca atual não os usa como fallback: ela recebe as artes originais locais e informa faces ausentes. A interpretação anterior de “template fictício” foi corrigida para protótipo sem emulação, não capa inventada.
 
 Estas artes foram desenhadas originalmente para o protótipo visual RETRO PASS ULTIMATE. Os arquivos não contêm ROMs, fotografias, capturas de jogos, capas comerciais, logotipos de editoras, personagens reproduzidos nem materiais extraídos de jogos.
 
@@ -17,3 +19,5 @@ Alex Kidd e Wonder Boy são apenas referências nominais da interface. Não há 
 `cosmic/game_box.gd` constrói uma caixa real em 3D, com corpo plástico chanfrado/arredondado, frente, verso, lombada, bordas superior e inferior, linha de abertura e frisos moldados. Dimensão nominal: 1,74 × 2,44 × 0,30 unidades. Centro na origem; frente +Z, verso −Z, lombada −X. A geometria não pretende reproduzir as medidas de uma embalagem comercial específica.
 
 O módulo é exclusivamente de apresentação. Não carrega ROMs, não executa jogos e não acessa contas ou bibliotecas reais.
+
+A pasta contém `.gdignore`: estes estudos antigos não são importados pelo Godot nem consomem memória no runtime/editor atual. Os vetores originais permanecem preservados para histórico.

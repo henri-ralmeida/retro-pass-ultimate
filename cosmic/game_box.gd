@@ -1,18 +1,22 @@
 extends Node3D
-## Original, fictional display box. Presentation only: no files, ROMs or launches.
+## Display-only physical box with explicitly supplied local sleeve art. No ROMs or launches.
 ## The sleeve uses separate front/back/spine textures. Front is +Z; spine is -X.
 ## configure() is safe before or after add_child(); each call replaces the model.
 
 const BOX_SIZE := Vector3(1.74, 2.44, 0.30)
 const CORNER_RADIUS := 0.025
 const SURFACE_OFFSET := 0.001
-const ASSET_ROOT := "res://assets/library_templates/"
-const KNOWN_IDS := ["alex_kidd", "wonder_boy"]
 
 var item: Dictionary = {}
-var item_id := "alex_kidd"
-var title := "Alex Kidd"
+var item_id := "unavailable"
+var title := "Capa indisponível"
 var _built := false
+var original_model: Node3D
+var lid: Node3D
+var cartridge: Node3D
+var opened := false
+var cartridge_out := false
+var inside_pose := Transform3D(Basis(Vector3.RIGHT, -PI*0.5), Vector3(0,0.0135,0.036))
 
 func _ready() -> void:
 	if not _built:
@@ -20,20 +24,24 @@ func _ready() -> void:
 
 func configure(data: Dictionary) -> void:
 	item = data.duplicate(true)
-	item_id = str(data.get("id", "alex_kidd")).to_lower().replace(" ", "_")
-	if item_id not in KNOWN_IDS:
-		item_id = "alex_kidd"
-	title = str(data.get("title", "Alex Kidd" if item_id == "alex_kidd" else "Wonder Boy"))
+	item_id = str(data.get("id", "unavailable"))
+	title = str(data.get("title", "Capa indisponível"))
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
+	original_model = null
+	lid = null
+	cartridge = null
+	opened = false
+	cartridge_out = false
 	_built = true
-	name = "FictionalBox_" + item_id
-	set_meta("fictional", true)
-	set_meta("official_artwork", false)
+	name = "LibraryBox_" + item_id
+	set_meta("fictional", false)
+	set_meta("artwork_source", str(data.get("artwork_source", "local, unverified")))
 	set_meta("rom_present", false)
 	set_meta("display_title", title)
 
+	if _load_original(data): return
 	var plastic := StandardMaterial3D.new()
 	plastic.albedo_color = Color("152033")
 	plastic.metallic = 0.12
@@ -65,29 +73,158 @@ func configure(data: Dictionary) -> void:
 	for y_position in [-0.99, -0.965, 0.965, 0.99]:
 		_block("MoldedRib", Vector3(0.003, 0.006, 0.21), Vector3(BOX_SIZE.x * 0.5 + 0.001, y_position, 0), plastic)
 
+func _load_original(data: Dictionary) -> bool:
+	var path := str(data.get("model_path", "res://assets/library_models/master_system_box_cartridge.glb"))
+	if path.is_empty() or not FileAccess.file_exists(path): return false
+	var document := GLTFDocument.new()
+	var state := GLTFState.new()
+	if document.append_from_file(ProjectSettings.globalize_path(path), state) != OK: return false
+	var scene := document.generate_scene(state)
+	if not scene: return false
+	var source_box := scene.find_child("SMS_BOX_ROOT", true, false) as Node3D
+	var source_cartridge := scene.find_child("SMS_CARTRIDGE_ROOT", true, false) as Node3D
+	if not source_box or not source_cartridge:
+		scene.free()
+		return false
+	original_model = Node3D.new()
+	original_model.name = "OriginalRoomAssembly"
+	add_child(original_model)
+	source_box.owner = null
+	source_box.get_parent().remove_child(source_box)
+	original_model.add_child(source_box)
+	source_box.transform = Transform3D.IDENTITY
+	source_cartridge.owner = null
+	source_cartridge.get_parent().remove_child(source_cartridge)
+	source_box.add_child(source_cartridge)
+	cartridge = source_cartridge
+	cartridge.transform = inside_pose
+	lid = source_box.find_child("BOX_LID_HINGE", true, false) as Node3D
+	scene.free()
+	_restore_original_art(data)
+	original_model.rotation.x = PI*0.5
+	var bounds := _mesh_bounds()
+	var factor := 2.44 / maxf(bounds.size.y, 0.001)
+	original_model.scale = Vector3.ONE * factor
+	bounds = _mesh_bounds()
+	original_model.position -= bounds.get_center()
+	set_meta("original_room_geometry", true)
+	return true
+
+func _restore_original_art(data: Dictionary) -> void:
+	var uv_path := str(data.get("uv_path", "res://assets/library_models/original_uv.json"))
+	var uv_data: Variant = JSON.parse_string(FileAccess.get_file_as_string(uv_path)) if FileAccess.file_exists(uv_path) else {}
+	if not uv_data is Dictionary: uv_data = {}
+	for mesh in original_model.find_children("*", "MeshInstance3D", true, false):
+		if uv_data.has(str(mesh.name)) and mesh.mesh.get_surface_count() == 1:
+			var arrays: Array = mesh.mesh.surface_get_arrays(0)
+			var coords: Array = uv_data[str(mesh.name)]["uv"]
+			var positions: Array = uv_data[str(mesh.name)]["positions"]
+			if coords.size() == arrays[Mesh.ARRAY_VERTEX].size():
+				var uvs := PackedVector2Array()
+				for vertex in arrays[Mesh.ARRAY_VERTEX]:
+					var nearest := 0
+					var distance := INF
+					for index in positions.size():
+						var point := Vector3(positions[index][0],positions[index][1],positions[index][2])
+						if vertex.distance_squared_to(point) < distance:
+							nearest = index
+							distance = vertex.distance_squared_to(point)
+					uvs.append(Vector2(coords[nearest][0], coords[nearest][1]))
+				arrays[Mesh.ARRAY_TEX_UV] = uvs
+				var restored := ArrayMesh.new()
+				restored.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+				restored.surface_set_material(0, mesh.mesh.surface_get_material(0))
+				mesh.mesh = restored
+		var face: String = {"Box_FRONT":"front", "Box_BACK":"back", "Box_LEFT_SPINE":"spine"}.get(str(mesh.name), "")
+		# Independent scraped/local faces fill their own UV rectangle, not the full
+		# original wraparound atlas. Missing faces stay neutral, never inherit a game.
+		if not face.is_empty() and mesh.mesh.get_surface_count() == 1:
+			var arrays: Array = mesh.mesh.surface_get_arrays(0)
+			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			var low := Vector2(INF,INF)
+			var high := Vector2(-INF,-INF)
+			for uv in uvs:
+				low = low.min(uv)
+				high = high.max(uv)
+			var span := high-low
+			for index in uvs.size():
+				uvs[index] = (uvs[index]-low)/Vector2(maxf(span.x,0.001),maxf(span.y,0.001))
+				if face == "back": uvs[index] = Vector2.ONE-uvs[index]
+			arrays[Mesh.ARRAY_TEX_UV] = uvs
+			var normalized := ArrayMesh.new()
+			normalized.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+			normalized.surface_set_material(0,mesh.mesh.surface_get_material(0))
+			mesh.mesh = normalized
+		for surface in mesh.mesh.get_surface_count():
+			var material = mesh.mesh.surface_get_material(surface)
+			if material is StandardMaterial3D and material.resource_name.begins_with("SLOT_"):
+				var copy: StandardMaterial3D = material.duplicate()
+				var path := str(data.get("art_root", "")).path_join(material.resource_name)
+				var texture := load_artwork(path + ".png") if not str(data.get("art_root", "")).is_empty() else null
+				if texture == null and not str(data.get("art_root", "")).is_empty(): texture = load_artwork(path + ".jpg")
+				if not face.is_empty(): texture = _texture(data,face)
+				copy.albedo_texture = texture
+				copy.albedo_color = Color.WHITE if texture else Color("27313d")
+				mesh.set_surface_override_material(surface, copy)
+
+func _mesh_bounds() -> AABB:
+	var result := AABB()
+	var first := true
+	for mesh in find_children("*", "MeshInstance3D", true, false):
+		var transform := Transform3D.IDENTITY
+		var node: Node3D = mesh
+		while node != self:
+			transform = node.transform * transform
+			node = node.get_parent()
+		var bounds: AABB = transform * mesh.get_aabb()
+		result = bounds if first else result.merge(bounds)
+		first = false
+	return result
+
+func can_open() -> bool:
+	return is_instance_valid(lid)
+
+func toggle_lid() -> void:
+	if not can_open(): return
+	opened = not opened
+	if not opened:
+		cartridge_out = false
+		cartridge.transform = inside_pose
+	lid.rotation.z = deg_to_rad(115.0) if opened else 0.0
+
+func toggle_cartridge() -> void:
+	if not can_open(): return
+	if not opened: toggle_lid()
+	cartridge_out = not cartridge_out
+	cartridge.transform = inside_pose
+	if cartridge_out: cartridge.position.y += 0.13
+
+func reset_parts() -> void:
+	if opened: toggle_lid()
+
 func get_local_bounds() -> AABB:
+	if is_instance_valid(original_model): return _mesh_bounds()
 	# Includes the small relief ribs and skin; independent of selected item.
 	var extent := BOX_SIZE * 0.5 + Vector3.ONE * 0.004
 	return AABB(-extent, extent * 2.0)
 
-func _texture(data: Dictionary, face: String) -> Texture2D:
-	var supplied: Variant = data.get("cover_" + face, null)
+static func load_artwork(supplied: Variant) -> Texture2D:
 	if supplied is Texture2D:
 		return supplied as Texture2D
-	if supplied is String and str(supplied).begins_with("res://") and ResourceLoader.exists(str(supplied)):
-		var resource: Resource = load(str(supplied))
-		if resource is Texture2D:
-			return resource as Texture2D
-	var path := ASSET_ROOT + item_id + "_" + face + ".svg"
-	if ResourceLoader.exists(path):
-		return load(path) as Texture2D
-	# Useful on the first editor import; retains deterministic art without a cache.
-	var source := FileAccess.get_file_as_string(path)
-	var image := Image.new()
-	if not source.is_empty() and image.load_svg_from_string(source) == OK:
-		image.generate_mipmaps()
-		return ImageTexture.create_from_image(image)
+	if not supplied is String or str(supplied).is_empty():
+		return null
+	var path := str(supplied)
+	# Runtime decoding also works without Godot import caches for local/private art.
+	if FileAccess.file_exists(path):
+		var image := Image.new()
+		if image.load(ProjectSettings.globalize_path(path)) == OK:
+			image.generate_mipmaps()
+			return ImageTexture.create_from_image(image)
 	return null
+
+func _texture(data: Dictionary, face: String) -> Texture2D:
+	# Never substitute invented artwork, another game, or the front for a missing back.
+	return load_artwork(data.get("cover_" + face, null))
 
 func _face(node_name: String, dimensions: Vector2, location: Vector3, angles: Vector3, artwork: Texture2D) -> void:
 	var panel := MeshInstance3D.new()
@@ -102,12 +239,12 @@ func _face(node_name: String, dimensions: Vector2, location: Vector3, angles: Ve
 	material.albedo_texture = artwork
 	material.albedo_color = Color.WHITE if artwork != null else Color("14293b")
 	# Matte printed sleeve: directional lighting still shapes it, gentle emission
-	# keeps the warning and spine readable under the existing cosmic lighting.
+	# keeps the supplied sleeve readable under the existing cosmic lighting.
 	material.roughness = 0.76
 	material.metallic = 0.0
 	material.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	material.metallic_specular = 0.22
-	material.emission_enabled = true
+	material.emission_enabled = artwork != null
 	material.emission = Color.WHITE
 	material.emission_texture = artwork
 	material.emission_energy_multiplier = 0.16

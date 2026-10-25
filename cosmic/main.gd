@@ -1134,6 +1134,7 @@ func enter_library() -> void:
 
 func _apply_entry(value: float) -> void:
  entry_progress = value
+ bg_material.set_shader_parameter("entry_warp",0.0 if reduced_motion else sin(value*PI))
  var data = systems[current_index]
  var s := get_viewport().get_visible_rect().size
  viewport_container.position = Vector2(s.x*0.08,s.y*0.18).lerp(Vector2.ZERO,value)
@@ -1144,6 +1145,7 @@ func _apply_entry(value: float) -> void:
  entry_veil.color.a = smoothstep(0.48,0.94,value)
 
 func _finish_library_entry() -> void:
+ bg_material.set_shader_parameter("entry_warp",0.0)
  library_state = "library"
  viewport_container.hide()
  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
@@ -1165,6 +1167,7 @@ func leave_library() -> void:
  entry_veil.color.a = 0.0
  library_state = "system"
  entry_progress = 0.0
+ bg_material.set_shader_parameter("entry_warp",0.0)
  ui.show()
  viewport_container.show()
  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if scene_active else SubViewport.UPDATE_DISABLED

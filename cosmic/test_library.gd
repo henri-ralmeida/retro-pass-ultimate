@@ -38,6 +38,7 @@ func run() -> void:
  await create_timer(0.25).timeout
  var progress=scene.entry_progress
  check(progress>0 and progress<1,"Camera transition progresses")
+ check(float(scene.bg_material.get_shader_parameter("entry_warp"))>0,"Deliberate entry has brief radial depth cue")
  scene._focus_lost()
  await create_timer(0.15).timeout
  check(is_equal_approx(scene.entry_progress,progress),"Focus loss pauses entry without disappearing")
@@ -45,12 +46,14 @@ func run() -> void:
  scene.go_back()
  check(scene.library_state=="system" and scene.ui.visible and scene.viewport_container.visible,"Back cancels transition")
  check(scene.camera.position.is_equal_approx(original_camera),"Cancel restores camera exactly")
+ check(is_zero_approx(float(scene.bg_material.get_shader_parameter("entry_warp"))),"Cancel clears warp")
  await create_timer(1.3).timeout
  check(scene.library_state=="system","Cancelled callback cannot reopen library")
  scene.reduced_motion=true
  for i in range(8):
   scene.cooldown=0;scene.confirm_selection("repeat")
   check(scene.library_state=="library" and scene.library_view.visible,"Reduced motion entry immediate")
+  check(is_zero_approx(float(scene.bg_material.get_shader_parameter("entry_warp"))),"Reduced motion has no warp")
   check(not scene.viewport_container.visible and not scene.ui.visible,"Console hidden while library active")
   scene._advance_dwell(100)
   check(not scene.history_open,"No history while browsing boxes")
@@ -61,7 +64,9 @@ func run() -> void:
   check(not scene.auto_history_armed,"No immediate history after return")
  scene.reduced_motion=false
  scene.cooldown=0;scene.confirm_selection("complete")
- await create_timer(1.65).timeout
+ var completion_deadline := Time.get_ticks_msec() + 5000
+ while (scene.library_state != "library" or scene.entry_veil.visible) and Time.get_ticks_msec() < completion_deadline:
+  await process_frame
  check(scene.library_state=="library" and scene.library_view.visible,"Animated entry completes")
  check(not scene.entry_veil.visible,"Transition veil removed")
  scene.set_scene_active(false)

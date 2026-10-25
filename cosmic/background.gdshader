@@ -7,6 +7,7 @@ uniform float motion_speed : hint_range(0.0,2.0) = 1.0;
 uniform float star_density : hint_range(0.2,2.0) = 1.0;
 uniform float nebula_brightness : hint_range(0.0,2.0) = 1.0;
 uniform bool comets_enabled = true;
+uniform float entry_warp : hint_range(0.0,1.0) = 0.0;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<4;i++){v+=noise(p)*a;p=p*2.03+vec2(13.0,7.0);a*=0.5;}return v;}
@@ -31,6 +32,17 @@ void fragment(){
   col+=mix(vec3(0.52,0.69,1.0),vec3(0.9,0.85,1.0),h)*(star+glow)*twinkle*(0.8-layer*0.14);
  }
  if(!reduced_motion && comets_enabled){float phase=mod(t+9.0,15.0);float active=step(11.5,phase);float u=(phase-11.5)/3.5;vec2 head=vec2(0.08+u*0.8,0.07+u*0.18);vec2 d=uv-head;float along=dot(d,normalize(vec2(0.8,0.18)));float cross_d=abs(dot(d,normalize(vec2(-0.18,0.8))));float tail=exp(-cross_d*1000.0)*smoothstep(-0.17,0.0,along)*(1.0-step(0.0,along));col+=vec3(0.55,0.68,1.0)*tail*active*0.6*sin(clamp(u,0.0,1.0)*3.14159);}
+ // Brief radial depth cue during deliberate entry, never in reduced motion.
+ if(!reduced_motion && entry_warp>0.001){
+  vec2 radial=(uv-vec2(0.5))*vec2(aspect,1.0);
+  float radius=length(radial);
+  float angle=atan(radial.y,radial.x);
+  float lane=floor((angle+3.14159)*55.0);
+  float strength=step(0.70,hash(vec2(lane,11.0)));
+  float streak=pow(max(0.0,cos(angle*345.0)),28.0)*strength;
+  float band=smoothstep(0.10,0.38,radius)*(1.0-smoothstep(0.75,1.2,radius));
+  col+=vec3(0.25,0.4,0.65)*streak*band*entry_warp*0.65;
+ }
  col*=0.72+0.28*(1.0-smoothstep(0.3,0.85,length(uv-0.5)));
  COLOR=vec4(col,1.0);
 }

@@ -1,13 +1,55 @@
 extends Control
-## Presentation-only collection. No file scanning, ROMs, emulation or launch action.
+## Local collection presentation and explicitly requested folder inventory.
+## Never executes ROMs, emulation, automatic scans, or network scraping.
 ## Host owns the transition and routes input here before its system selector.
 signal exit_requested
 
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
-const ITEMS := [
- {"id":"alex_kidd", "title":"Alex Kidd", "subtitle":"ESTUDO 01 · AVENTURA", "accent":"9dd8f2", "description":"Uma pequena caixa, um universo de lembranças.\nExplore uma releitura visual feita para esta coleção."},
- {"id":"wonder_boy", "title":"Wonder Boy", "subtitle":"ESTUDO 02 · EXPLORAÇÃO", "accent":"e5c78b", "description":"Outra aventura na mesma constelação.\nUma segunda capa imaginada, pronta para olhar de perto."}
-]
+const GameBox = preload("res://cosmic/game_box.gd")
+const DEFAULT_MANIFEST := "res://assets/local_box_art/manifest.json"
+# Public checkout contains no proprietary sleeve artwork and never invents it.
+var ITEMS: Array[Dictionary] = []
+var manifest_path := ""
+var scan_button: Button
+var scan_dialog: FileDialog
+var scan_thread: Thread
+var scanner: RefCounted
+var scan_mutex := Mutex.new()
+var scan_cancelled := false
+var carousel: Node3D
+var neighbor_boxes: Array[Node3D] = []
+
+func _load_items(path_override: String = "") -> void:
+ ITEMS.clear()
+ manifest_path = path_override if not path_override.is_empty() else OS.get_environment("RETROPASS_BOX_ART_MANIFEST")
+ if manifest_path.is_empty():
+  manifest_path = "user://collection_catalog.json" if FileAccess.file_exists("user://collection_catalog.json") else DEFAULT_MANIFEST
+ if FileAccess.file_exists(manifest_path):
+  var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+  if parsed is Dictionary and parsed.get("items") is Array:
+   var seen := {}
+   for raw in parsed.items:
+    if not raw is Dictionary: continue
+    var id := str(raw.get("id", ""))
+    if id.is_empty() or seen.has(id): continue
+    seen[id] = true
+    var data: Dictionary = raw.duplicate(true)
+    data["title"] = str(data.get("title", id))
+    data["subtitle"] = str(data.get("subtitle", "MASTER SYSTEM"))
+    data["accent"] = str(data.get("accent", "9dd8f2"))
+    data["description"] = str(data.get("description", "Capa do acervo local. Frente, lombada e verso independentes."))
+    for field in ["cover_front", "cover_spine", "cover_back", "cover_edge", "model_path", "uv_path", "art_root"]:
+     var key: String = field
+     if key in ["model_path", "uv_path"] and str(data.get(key, "")).is_empty():
+      data.erase(key)
+      continue
+     var path := str(data.get(key, ""))
+     if not path.is_empty() and not path.is_absolute_path(): path = manifest_path.get_base_dir().path_join(path)
+     data[key] = path
+    ITEMS.append(data)
+ if ITEMS.is_empty():
+  ITEMS.append({"id":"unavailable", "title":"Acervo indisponível", "subtitle":"MASTER SYSTEM · SEM CAPAS LOCAIS", "accent":"9dd8f2", "description":"Nenhuma capa local disponível. A caixa permanece sem arte, sem substituições fictícias."})
+
 const BOX_BOUNDS := AABB(Vector3(-0.87,-1.22,-0.15),Vector3(1.74,2.44,0.30))
 const DEFAULT_YAW := 0.40
 const DEFAULT_PITCH := -0.07
@@ -42,6 +84,9 @@ var mode_label: Label
 var help_label: Label
 var legal_label: Label
 var footer: HBoxContainer
+var parts: HBoxContainer
+var lid_button: Button
+var cartridge_button: Button
 var presets: HBoxContainer
 var zoom_controls: HBoxContainer
 var zoom_label: Label
@@ -77,26 +122,37 @@ func _ready() -> void:
 func _build() -> void:
  if built or not is_instance_valid(host): return
  built = true
+ _load_items()
  _build_world()
  heading = _label("MASTER SYSTEM  /  BIBLIOTECA",orbitron,17,Color("dedeea"))
- disclosure = _label("Biblioteca conceito · capas fictícias · sem jogos",chakra,15,Color("a8b9d3"))
- chapter = _label("01  /  ACERVO IMAGINADO",chakra,14,Color("9dd8f2"))
+ disclosure = _label("Acervo local · capas originais quando disponíveis · sem jogos",chakra,15,Color("a8b9d3"))
+ chapter = _label("01  /  ACERVO LOCAL",chakra,14,Color("9dd8f2"))
  item_title = _label("",orbitron,39,Color("f5f1ff"))
  item_subtitle = _label("",chakra,16,Color("bdc5de"))
  description = _label("",chakra,18,Color("b0b6ce"))
  description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- collection_label = _label("ESCOLHA UMA CAPA",chakra,12,Color("828da9"))
+ collection_label = _label("COLEÇÃO",chakra,12,Color("828da9"))
  position_label = _label("01  /  02",orbitron,14,Color("d5dbee"))
  position_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
  mode_label = _label("OBJETO 3D  ·  FRENTE / LOMBADA / VERSO",chakra,12,Color("8995b2"))
  mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
  help_label = _label("←  →  mudar de capa     ·     Inspecionar para girar a caixa",chakra,14,Color("a5aec7"))
  help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
- legal_label = _label("Arte conceitual original. Nomes pertencem aos seus titulares. Nenhum jogo incluído.",chakra,11,Color("77839e"))
+ legal_label = _label("Artes e marcas pertencem aos seus titulares. Capas carregadas localmente. Nenhum jogo incluído.",chakra,11,Color("77839e"))
  legal_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
  for node in [heading,disclosure,chapter,item_title,item_subtitle,description,collection_label,position_label,mode_label,help_label,legal_label]: add_child(node)
  previous_button = _plain_button("‹","Capa anterior",func(): navigate(-1))
  next_button = _plain_button("›","Próxima capa",func(): navigate(1))
+ scan_button = _plain_button("Adicionar pasta","Escolher pasta local e atualizar catálogo",_choose_scan_folder)
+ add_child(scan_button)
+ scan_dialog = FileDialog.new()
+ scan_dialog.title = "Escolha a pasta local de jogos"
+ scan_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+ scan_dialog.access = FileDialog.ACCESS_FILESYSTEM
+ scan_dialog.use_native_dialog = true
+ scan_dialog.size = Vector2i(760,480)
+ scan_dialog.dir_selected.connect(_scan_folder)
+ add_child(scan_dialog)
  for button in [previous_button,next_button]:
   button.add_theme_font_size_override("font_size",32)
   add_child(button)
@@ -121,6 +177,15 @@ func _build() -> void:
   button.custom_minimum_size = Vector2(84,34)
   presets.add_child(button)
   preset_buttons.append(button)
+ parts = HBoxContainer.new()
+ parts.alignment = BoxContainer.ALIGNMENT_CENTER
+ parts.add_theme_constant_override("separation",8)
+ parts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ add_child(parts)
+ lid_button = _plain_button("Abrir caixa","Abrir ou fechar a tampa original",func(): box.toggle_lid(); _update_parts())
+ cartridge_button = _plain_button("Retirar cartucho","Retirar ou guardar o cartucho original",func(): box.toggle_cartridge(); _update_parts())
+ parts.add_child(lid_button)
+ parts.add_child(cartridge_button)
  zoom_controls = HBoxContainer.new()
  zoom_controls.alignment = BoxContainer.ALIGNMENT_CENTER
  zoom_controls.add_theme_constant_override("separation",4)
@@ -178,8 +243,12 @@ func _build_world() -> void:
  pivot = Node3D.new()
  pivot.name = "BoxInspectionPivot"
  world.add_child(pivot)
+ carousel = Node3D.new()
+ carousel.name = "PerspectiveCarousel"
+ world.add_child(carousel)
  camera = Camera3D.new()
- camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+ camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+ camera.fov = 32.0
  camera.keep_aspect = Camera3D.KEEP_HEIGHT
  camera.near = 0.01
  camera.far = 20.0
@@ -256,7 +325,7 @@ func _mapped_button(action: String, value: String, tip: String, callback: Callab
 
 func _build_card(index: int) -> void:
  var data: Dictionary = ITEMS[index]
- var button := _plain_button("","Selecionar capa fictícia: " + str(data.title),func(): _select(index))
+ var button := _plain_button("","Selecionar caixa: " + str(data.title),func(): _select(index))
  button.name = "LibraryCard" + str(index)
  button.alignment = HORIZONTAL_ALIGNMENT_LEFT
  add_child(button)
@@ -282,6 +351,81 @@ func _build_card(index: int) -> void:
  number.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
  button.add_child(number)
 
+func _cancel_scan() -> void:
+ scan_mutex.lock()
+ scan_cancelled = true
+ scan_mutex.unlock()
+
+func _scan_was_cancelled() -> bool:
+ scan_mutex.lock()
+ var value := scan_cancelled
+ scan_mutex.unlock()
+ return value
+
+func _choose_scan_folder() -> void:
+ if scan_thread != null:
+  _cancel_scan()
+  disclosure.text = "Cancelando leitura… catálogo anterior preservado"
+  return
+ cancel_drag()
+ scan_dialog.popup_centered()
+
+func _scan_folder(folder: String) -> void:
+ if scan_thread != null: return
+ var script = load("res://cosmic/collection_scan.gd")
+ if script == null:
+  disclosure.text = "Scanner indisponível. Nenhum catálogo alterado."
+  return
+ scanner = script.new()
+ scan_mutex.lock()
+ scan_cancelled = false
+ scan_mutex.unlock()
+ scan_button.text = "Cancelar leitura"
+ disclosure.text = "Lendo pasta local… nenhuma busca online configurada"
+ scan_thread = Thread.new()
+ var error := scan_thread.start(func(): return scanner.scan_folder(folder, {"cancelled":_scan_was_cancelled}))
+ if error != OK:
+  scan_thread = null
+  scan_button.text = "Adicionar pasta"
+  disclosure.text = "Não foi possível iniciar a leitura da pasta."
+
+func _finish_scan() -> void:
+ var result: Dictionary = scan_thread.wait_to_finish()
+ scan_thread = null
+ scan_button.text = "Adicionar pasta"
+ if result.get("status", "error") != "ok":
+  disclosure.text = "Leitura não concluída. Catálogo anterior preservado."
+  return
+ if result.get("items", []).is_empty():
+  disclosure.text = "Nenhum jogo compatível encontrado. Catálogo anterior preservado."
+  return
+ var saved: int = scanner.save_catalog(result)
+ if saved != OK:
+  disclosure.text = "Não foi possível salvar o catálogo. Acervo anterior preservado."
+  return
+ for card in cards:
+  all_buttons.erase(card)
+  remove_child(card)
+  card.queue_free()
+ cards.clear()
+ card_textures.clear()
+ _load_items("user://collection_catalog.json")
+ for index in ITEMS.size(): _build_card(index)
+ inspect_mode = false
+ _select(0)
+ disclosure.text = "%d jogos locais · ScreenScraper não configurado · sem execução" % ITEMS.size()
+ if not result.get("warnings", []).is_empty():
+  disclosure.text += " · %d avisos" % result.warnings.size()
+  disclosure.tooltip_text = "\n".join(result.warnings)
+ layout()
+ scan_button.grab_focus()
+
+func _exit_tree() -> void:
+ if scan_thread != null:
+  _cancel_scan()
+  scan_thread.wait_to_finish()
+  scan_thread = null
+
 func open() -> void:
  _build()
  if not built: return
@@ -295,6 +439,7 @@ func open() -> void:
  inspect_button.grab_focus()
 
 func close() -> void:
+ if scan_dialog: scan_dialog.hide()
  cancel_drag()
  inspect_mode = false
  visible = false
@@ -322,22 +467,50 @@ func _select(index: int) -> void:
  item_title.text = data.title
  item_subtitle.text = data.subtitle
  description.text = data.description
- chapter.text = "%02d  /  ACERVO IMAGINADO" % (index+1)
+ chapter.text = "%02d  /  ACERVO LOCAL" % (index+1)
  chapter.add_theme_color_override("font_color",Color(data.accent))
  position_label.text = "%02d  /  %02d" % [index+1,ITEMS.size()]
  for card_index in cards.size():
   var card := cards[card_index]
   var active := card_index == current_index
   card.add_theme_stylebox_override("normal",_panel_style(Color(0.075,0.14,0.22,0.85) if active else Color(0.04,0.06,0.12,0.66),Color("709ebd") if active else Color(0.42,0.55,0.75,0.23)))
-  card.accessibility_description = "Capa selecionada" if active else "Outra capa da coleção conceito"
+  card.accessibility_description = "Capa selecionada" if active else "Outra caixa do acervo local"
  _refresh_card_textures()
+ _build_neighbors()
  reset_inspection()
+ layout()
 
 func _refresh_card_textures() -> void:
- # The box exposes its original concept artwork; texture names are not ROMs.
  for index in cards.size():
-  var path := "res://assets/library_templates/" + str(ITEMS[index].id) + "_front.svg"
-  if ResourceLoader.exists(path): card_textures[index].texture = load(path)
+  var distance := mini(posmod(index-current_index,ITEMS.size()),posmod(current_index-index,ITEMS.size()))
+  card_textures[index].texture = GameBox.load_artwork(ITEMS[index].get("cover_front", null)) if distance <= 2 else null
+ var missing: Array[String] = []
+ for face in ["front", "spine", "back"]:
+  if GameBox.load_artwork(ITEMS[current_index].get("cover_" + face, null)) == null:
+   missing.append({"front":"frente", "spine":"lombada", "back":"verso"}[face])
+ description.text = str(ITEMS[current_index].description)
+ if not missing.is_empty(): description.text = "Arte indisponível: " + ", ".join(missing) + ". Sem substituições fictícias."
+
+func _build_neighbors() -> void:
+ for node in neighbor_boxes:
+  carousel.remove_child(node)
+  node.queue_free()
+ neighbor_boxes.clear()
+ # One real entry is one box. Never duplicate it to fake a larger collection.
+ var used := {current_index:true}
+ for offset in [-1, 1, -2, 2]:
+  var index := posmod(current_index + offset, ITEMS.size())
+  if used.has(index): continue
+  used[index] = true
+  var neighbor := GameBox.new()
+  neighbor.configure(ITEMS[index])
+  carousel.add_child(neighbor)
+  var side := signf(float(offset))
+  neighbor.position = Vector3(side * (2.05 + (abs(offset)-1)*1.25), -0.12, -1.25 - (abs(offset)-1)*0.9)
+  neighbor.rotation.y = -side * 0.65
+  neighbor.scale = Vector3.ONE * 0.86
+  neighbor_boxes.append(neighbor)
+ carousel.visible = not inspect_mode
 
 func toggle_inspection() -> void:
  if not visible: return
@@ -359,8 +532,18 @@ func go_back() -> void:
   cancel_drag()
   exit_requested.emit()
 
+func _update_parts() -> void:
+ model_bounds = box.get_local_bounds()
+ lid_button.text = "Fechar caixa" if box.opened else "Abrir caixa"
+ cartridge_button.text = "Guardar cartucho" if box.cartridge_out else "Retirar cartucho"
+ _frame_box()
+
 func reset_inspection() -> void:
  cancel_drag()
+ if box:
+  box.reset_parts()
+  model_bounds = box.get_local_bounds()
+  if lid_button: _update_parts()
  yaw = DEFAULT_YAW
  pitch = DEFAULT_PITCH
  zoom = 1.0
@@ -399,14 +582,17 @@ func _apply_rotation() -> void:
 func _frame_box() -> void:
  if not camera or viewport_container.size.y <= 0.0: return
  var ratio := viewport_container.size.x/maxf(viewport_container.size.y,1.0)
- var extent := Vector2.ZERO
+ var tangent := tan(deg_to_rad(camera.fov)*0.5)
+ var distance := 0.0
  for index in range(8):
-  var point := pivot.basis * (model_bounds.get_endpoint(index)-model_bounds.get_center())
-  extent.x = maxf(extent.x,absf(point.x)*2.0)
-  extent.y = maxf(extent.y,absf(point.y)*2.0)
- # Dynamic projected bounds preserve all eight corners at every angle and zoom.
- # 1.56 / 1.40 guarantees a 5.1% minimum margin even at maximum zoom.
- camera.size = maxf(extent.y,extent.x/ratio) * 1.56 / zoom
+  var point := pivot.basis * model_bounds.get_endpoint(index)
+  # Solve the perspective frustum per vertex, including its depth. This keeps
+  # a 5% border at maximum zoom for every yaw/pitch, not just front-facing.
+  distance = maxf(distance,point.z + maxf(absf(point.y),absf(point.x)/ratio) / tangent * (1.56 if inspect_mode else 1.12) / zoom)
+ if not inspect_mode and not neighbor_boxes.is_empty():
+  distance = maxf(distance, 3.35 / (tangent*ratio))
+ camera.position = Vector3(0,0,maxf(distance,1.0))
+ camera.far = maxf(30.0,distance+10.0)
  if zoom_label: zoom_label.text = "%d%%" % roundi(zoom*100.0)
 
 func refresh_controls() -> void:
@@ -429,6 +615,8 @@ func refresh_controls() -> void:
  if motion_label: motion_label.text = "Animar" if host.get("reduced_motion") == true else "Pausar"
  motion_button.accessibility_name = "Animar fundo" if host.get("reduced_motion") == true else "Pausar movimento do fundo"
  reset_button.visible = inspect_mode
+ carousel.visible = not inspect_mode
+ parts.visible = inspect_mode and box.can_open()
  presets.visible = inspect_mode
  zoom_controls.visible = inspect_mode
  help_label.text = "Arraste para girar · roda ou +/− para zoom · setas giram" if inspect_mode else "←  →  mudar de capa     ·     Inspecionar para girar a caixa"
@@ -460,58 +648,69 @@ func layout() -> void:
  var header_y := 21.0
  heading.position = Vector2(margin,header_y)
  heading.add_theme_font_size_override("font_size",14 if narrow else 17)
+ scan_button.position = Vector2(s.x-margin-134,20)
+ scan_button.size = Vector2(134,42)
  disclosure.position = Vector2(margin,header_y+30)
  disclosure.add_theme_font_size_override("font_size",13 if narrow else 15)
- var split := s.x*0.43
- var body_top := 118.0 if s.y >= 620 else 100.0
- var body_bottom := s.y-142.0
  var compact := s.y < 620
- var text_width := split-margin-26.0
- chapter.position = Vector2(margin,body_top)
- item_title.position = Vector2(margin,body_top+26)
- item_title.add_theme_font_size_override("font_size",30 if narrow else 39)
- item_subtitle.position = Vector2(margin,body_top+76)
- item_subtitle.add_theme_font_size_override("font_size",13 if narrow else 16)
- description.position = Vector2(margin,body_top+114)
- description.size = Vector2(text_width,72)
- description.add_theme_font_size_override("font_size",15 if narrow else 17)
- description.visible = not inspect_mode and not compact
- var card_height := 70.0 if compact else 78.0
- var cards_top := maxf(body_top+118.0,body_bottom-card_height*2.0-8.0)
- collection_label.position = Vector2(margin,cards_top-24.0)
+ var title_y := s.y-222.0
+ chapter.position = Vector2(margin,94)
+ item_title.position = Vector2(margin,title_y)
+ item_title.size = Vector2(s.x-margin*2,48)
+ item_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+ item_title.add_theme_font_size_override("font_size",25 if narrow else 32)
+ item_subtitle.position = Vector2(margin,title_y+44)
+ item_subtitle.size = Vector2(s.x-margin*2,24)
+ item_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+ item_subtitle.add_theme_font_size_override("font_size",12 if narrow else 14)
+ description.position = Vector2(margin,header_y+57)
+ description.size = Vector2(s.x-margin*2,32)
+ description.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+ description.add_theme_font_size_override("font_size",11 if narrow else 12)
+ description.visible = not inspect_mode
+ collection_label.visible = false
+ # The coverflow is the collection, not a flat card list. Compact title tabs
+ # remain genuine pointer/focus targets for at most three adjacent entries.
+ var visible_indices: Array[int] = [current_index]
+ for offset in [-1,1]:
+  var adjacent := posmod(current_index+offset,ITEMS.size())
+  if adjacent not in visible_indices: visible_indices.append(adjacent)
+ visible_indices.sort()
+ var card_width := minf(230.0,(s.x-margin*2)/visible_indices.size()-8.0)
+ var row_width := visible_indices.size()*(card_width+8.0)-8.0
  for index in cards.size():
-  cards[index].position = Vector2(margin,cards_top+index*(card_height+8.0))
-  cards[index].size = Vector2(text_width,card_height)
-  cards[index].visible = not inspect_mode
-  cards[index].get_node("CardNumber").position = Vector2(text_width-42,18)
-  cards[index].get_node("CardNumber").size = Vector2(28,25)
-  card_textures[index].size.y = card_height-16.0
- viewport_container.position = Vector2(split+20,91)
- viewport_container.size = Vector2(s.x-split-margin-40,s.y-242)
+  cards[index].visible = not inspect_mode and ITEMS.size() > 1 and index in visible_indices
+  var slot := visible_indices.find(index)
+  cards[index].position = Vector2((s.x-row_width)*0.5+slot*(card_width+8),s.y-180)
+  cards[index].size = Vector2(card_width,34)
+  cards[index].get_node("CardTitle").position = Vector2(10,7)
+  cards[index].get_node("CardTitle").add_theme_font_size_override("font_size",14)
+  cards[index].get_node("CardNumber").visible = false
+  card_textures[index].visible = false
+  for child in cards[index].get_children():
+   if child is Label and child.name != "CardTitle": child.visible = false
+ viewport_container.position = Vector2(margin+24,102)
+ viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-324))
  if inspect_mode:
   viewport_container.position = Vector2(s.x*0.15,112)
-  viewport_container.size = Vector2(s.x*0.70,s.y-322)
-  item_title.position = Vector2(margin,body_top+18)
-  item_title.add_theme_font_size_override("font_size",19 if narrow else 23)
-  item_subtitle.visible = false
-  chapter.visible = false
- else:
-  item_subtitle.visible = true
-  chapter.visible = true
+  viewport_container.size = Vector2(s.x*0.70,s.y-364)
  item_title.visible = not inspect_mode
- collection_label.visible = not inspect_mode
- previous_button.visible = not inspect_mode
- next_button.visible = not inspect_mode
- previous_button.position = Vector2(split-24,viewport_container.position.y+viewport_container.size.y*0.5-21)
+ item_subtitle.visible = not inspect_mode and ITEMS.size() == 1
+ chapter.visible = not inspect_mode
+ previous_button.visible = not inspect_mode and ITEMS.size() > 1
+ next_button.visible = not inspect_mode and ITEMS.size() > 1
+ previous_button.position = Vector2(margin,viewport_container.position.y+viewport_container.size.y*0.5-21)
  next_button.position = Vector2(s.x-margin-42,previous_button.position.y)
  previous_button.size = Vector2(42,48)
  next_button.size = Vector2(42,48)
- position_label.position = Vector2(split+20,s.y-145)
- position_label.size = Vector2(s.x-split-margin-40,22)
+ position_label.position = Vector2(s.x-130,94)
+ position_label.size = Vector2(90,22)
  position_label.visible = not inspect_mode
- mode_label.position = Vector2(0,88 if inspect_mode else s.y-172)
- mode_label.size = Vector2(s.x,24) if inspect_mode else Vector2(s.x-split-margin-40,24)
- if not inspect_mode: mode_label.position.x = split+20
+ mode_label.visible = inspect_mode
+ mode_label.position = Vector2(0,88 if inspect_mode else s.y-151)
+ mode_label.size = Vector2(s.x,24)
+ parts.position = Vector2(s.x*0.5-170,s.y-230)
+ parts.size = Vector2(340,36)
  presets.position = Vector2(s.x*0.5-220,s.y-187)
  presets.size = Vector2(280,38)
  zoom_controls.position = Vector2(s.x*0.5+76,s.y-187)
@@ -559,6 +758,7 @@ func _move_focus(direction: int) -> void:
 
 func handle_event(event: InputEvent) -> bool:
  if not visible or not built: return false
+ if scan_dialog.visible: return false
  if host.get("application_focused") == false or host.get("scene_active") == false:
   cancel_drag()
   return true
@@ -653,8 +853,12 @@ func handle_event(event: InputEvent) -> bool:
  return false
 
 func _process(delta: float) -> void:
+ if scan_thread != null and not scan_thread.is_alive(): _finish_scan()
  if not visible or not built: return
  if host.get("application_focused") == false or host.get("scene_active") == false:
+  cancel_drag()
+  return
+ if scan_dialog.visible:
   cancel_drag()
   return
  if inspect_mode:

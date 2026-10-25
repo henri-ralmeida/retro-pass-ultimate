@@ -1,6 +1,6 @@
 # RETRO PASS ULTIMATE
 
-Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual é **Sistemas no Infinito**: um Master System 3D em fundo cósmico, com inspeção interativa, história do console e entrada animada em uma biblioteca 3D conceitual. Substitui a proposta inicial de quarto 3D registrada no primeiro commit.
+Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual é **Sistemas no Infinito**: um Master System 3D em fundo cósmico, com inspeção interativa, história do console e entrada animada em uma biblioteca de caixas 3D. Substitui a proposta inicial de quarto 3D registrada no primeiro commit.
 
 ## Executar
 
@@ -17,6 +17,7 @@ Este repositório contém código-fonte, não um executável Windows já validad
 - Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
 - R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
 - M: pausar/retomar movimento.
+- Escanear jogos, na biblioteca: escolher uma pasta para catálogo local. Não executa arquivos, não altera a coleção e não faz consultas online sem integração configurada. Capas locais explicitamente associadas preenchem cada face disponível.
 - F1 / Controles, na tela do console: escolher família de símbolos e remapear teclas/botões; configuração persiste localmente. Conflitos trocam as duas ações, sem apagar um comando. Restaurar controles padrão desfaz remapeamentos e a escolha manual de símbolos.
 - Controle: posição oeste (Xbox X / PlayStation quadrado) inspeciona; sul confirma e leste volta. Nomes ambíguos mostram posições genéricas, sem adivinhar hardware. A seleção manual de família altera símbolos, não identidade detectada.
 - Permanecer no console por oito segundos elegíveis abre a história; não interrompe inspeção.
@@ -24,7 +25,7 @@ Este repositório contém código-fonte, não um executável Windows já validad
 
 ## Escopo atual
 
-Somente Master System. Entrar aproxima a câmera do console e revela uma biblioteca de caixas 3D fictícias, com frente, lombada e verso. Alex Kidd e Wonder Boy identificam estudos visuais originais, não capas oficiais nem edições comerciais específicas. Não há ROMs, execução de jogos, biblioteca pessoal conectada ou integração RetroAchievements. Nenhuma homologação Hardcore é alegada. Movimento reduzido troca de cena sem a animação de entrada; Voltar cancela a transição ou retorna ao console.
+Somente Master System. Entrar aproxima a câmera do console e revela uma biblioteca de caixas 3D, com frente, lombada e verso. O protótipo não emula jogos, mas as capas devem corresponder às embalagens originais disponíveis, sem reinterpretar a arte. As mídias são carregadas de um manifesto local; não são distribuídas automaticamente por este repositório. Sem mídia configurada, a interface informa sua ausência em vez de inventar uma capa. Veja `docs/ARTES_LOCAIS.md`. Não há ROMs, execução de jogos, biblioteca pessoal conectada ou integração RetroAchievements. Nenhuma homologação Hardcore é alegada. Movimento reduzido troca de cena sem a animação de entrada; Voltar cancela a transição ou retorna ao console.
 
 ## Testes
 
@@ -39,6 +40,8 @@ Execute no diretório do projeto, por exemplo:
     godot --headless --path . --script cosmic/test_library.gd
     godot --headless --path . --script cosmic/test_library_view.gd
     godot --headless --path . --script cosmic/test_library_propagation.gd
+    godot --headless --path . --script cosmic/test_library_catalog.gd
+    godot --headless --path . --script cosmic/test_collection_scan.gd
     godot --headless --path . --script cosmic/test_zoom_stress.gd
 
 Em Linux/macOS, `bash tools/verify_project.sh` executa a importação, a suíte e a auditoria de imagens antigas em sequência.

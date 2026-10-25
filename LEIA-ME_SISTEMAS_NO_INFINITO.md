@@ -1,7 +1,7 @@
 # RETRO PASS ULTIMATE
 ## Sistemas no Infinito · protótipo Master System
 
-Projeto-fonte Godot, não um executável Windows exportado. Contém somente o Master System e uma biblioteca conceitual de caixas 3D fictícias, sem ROM, emulação ou biblioteca pessoal conectada.
+Projeto-fonte Godot, não um executável Windows exportado. Contém somente o Master System e uma biblioteca de caixas 3D com artes locais da embalagem original, sem ROM, emulação ou biblioteca pessoal conectada.
 
 ### Abrir
 1. Clone o repositório ou atualize a branch `feature/master-system`, sem sobrepor arquivos locais não versionados.
@@ -22,11 +22,11 @@ Rodapé contextual do estudo **09 (ES-DE)**: indicador circular de tecla e rótu
 
 Apenas o logotipo do Master System aparece abaixo do console, sem repetir seu nome em texto. O nome interno e acessível permanece preservado. A marca do aplicativo é **RETRO PASS ULTIMATE**, com espaços, sem barra.
 
-Hover não seleciona, inicia mídia ou emulação. A confirmação aproxima a câmera e entra na biblioteca conceitual 3D. Não abre o quarto nem executa jogos.
+Hover não seleciona, inicia mídia ou emulação. A confirmação aproxima a câmera e entra na biblioteca 3D. Não abre o quarto nem executa jogos.
 
 ### Integração e dados
 `cosmic/system_data.gd` declara identificador, nome, subtítulo, modelo, transformação, câmera/enquadramento, `logo: Texture2D`, `logo_source`, `history_text`, `history_credits` e `history_sources`. `cosmic/master_system.tres` é o único registro real.
-Contrato: sinal `system_selected(system_id: String)`, payload `sega_master_system`. A rota visual da biblioteca consome a seleção; as capas são estudos fictícios, não edições comerciais. Cooldown de 400 ms, rejeição de repetição automática de tecla e proteção no retorno de foco evitam ações duplicadas/carregadas.
+Contrato: sinal `system_selected(system_id: String)`, payload `sega_master_system`. A rota visual da biblioteca consome a seleção; as capas vêm de mídia local, com edição e procedência documentadas quando verificáveis. A ausência de arte não autoriza inventá-la. Cooldown de 400 ms, rejeição de repetição automática de tecla e proteção no retorno de foco evitam ações duplicadas/carregadas.
 Nome textual só serve como fallback visual quando um sistema não possui logo. A navegação, câmera e logo são orientados por dados, sem condições específicas por console no controlador.
 
 ### Visual e movimento
