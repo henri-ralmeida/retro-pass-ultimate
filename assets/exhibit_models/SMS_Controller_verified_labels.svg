@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="107mm" height="44mm" viewBox="0 0 107 44">
+  <title>Verified controller wording, independently typeset</title>
+  <desc>Transparent editable overlay. Only CONTROL PAD, 1 START and 2 were transcribed from the inspected controller photograph. No photographic pixels or SEGA wordmark. Generic fonts are not claimed to reproduce original typography. Approximate label placement follows the existing mesh: SVG x = local X in millimeters + 53.5; SVG y = local Z in millimeters + 22. Requires visual integration verification before use.</desc>
+  <g fill="#efeee8">
+    <text x="25.3" y="4.5" text-anchor="middle" font-family="DejaVu Serif,serif" font-weight="bold" font-size="2.7" textLength="25.5" lengthAdjust="spacingAndGlyphs">CONTROL PAD</text>
+    <text x="73.2" y="17.5" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-weight="bold" font-size="1.7" textLength="11.0" lengthAdjust="spacingAndGlyphs">1 START</text>
+    <text x="87.5" y="17.5" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-weight="bold" font-size="1.7">2</text>
+  </g>
+</svg>

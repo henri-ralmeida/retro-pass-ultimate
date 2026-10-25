@@ -29,3 +29,7 @@
 
 # Artes locais de jogos: carregadas por manifesto, não redistribuídas no repositório.
 /assets/local_box_art/
+
+# Python build caches
+__pycache__/
+*.py[cod]

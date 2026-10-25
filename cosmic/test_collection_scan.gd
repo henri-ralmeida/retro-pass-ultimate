@@ -24,7 +24,7 @@ func run() -> void:
  write_file(fixture.path_join("media/front.png"), "synthetic-media")
  write_file(fixture.path_join("media/back.jpg"), "synthetic-media")
  write_file(fixture.path_join("media/spine.webp"), "synthetic-media")
- write_file(fixture.path_join("gamelist.xml"), '<gameList><game><path>./Alex (USA).SMS</path><name>Explicit Local Name</name><desc>Local description</desc><boxfront>./media/front.png</boxfront><boxback>./media/back.jpg</boxback><boxspine>./media/spine.webp</boxspine></game><game><path>./nested/Unknown.zip</path><name>Exact Archive</name><image>../../outside.png</image></game><game><path>./nested/Third.7z</path><name>Third</name><image>./media/front.png</image></game><game><path>./nested/Third.7z</path><name>Third</name><image>./media/front.png</image></game><game><path>./Alex.sms</path><name>Never Fuzzy Match</name></game></gameList>')
+ write_file(fixture.path_join("gamelist.xml"), '<gameList><game><path>./Alex (USA).SMS</path><name>Explicit Local Name</name><desc>Local description</desc><boxfront>./media/front.png</boxfront><boxback>./media/back.jpg</boxback><boxspine>./media/spine.webp</boxspine><cartridge_label>./media/front.png</cartridge_label><wheel>./media/back.jpg</wheel></game><game><path>./nested/Unknown.zip</path><name>Exact Archive</name><image>../../outside.png</image></game><game><path>./nested/Third.7z</path><name>Third</name><image>./media/front.png</image></game><game><path>./nested/Third.7z</path><name>Third</name><image>./media/front.png</image></game><game><path>./Alex.sms</path><name>Never Fuzzy Match</name></game></gameList>')
  var catalog_before := FileAccess.get_file_as_string(Scanner.CATALOG_PATH) if FileAccess.file_exists(Scanner.CATALOG_PATH) else ""
  var before := FileAccess.get_sha256(fixture.path_join("Alex (USA).SMS"))
  var scanner := Scanner.new()
@@ -38,6 +38,8 @@ func run() -> void:
  check(first.title == "Explicit Local Name", "Exact XML path matches; no fuzzy replacement")
  check(first.size_bytes == 19, "Byte size measured without interpretation")
  check(first.cover_front.ends_with("front.png") and first.cover_back.ends_with("back.jpg") and first.cover_spine.ends_with("spine.webp"), "Independent local face paths")
+ check(first.cartridge_label.ends_with("front.png") and first.wheel.ends_with("back.jpg"), "Explicit same-entry cartridge label and wheel paths retained independently")
+ check(not result.items[1].has("cartridge_label"), "Missing label never inherited from another entry")
  check(first.identity_status == "unverified", "Local metadata never claims verified online identity")
  var third: Dictionary = result.items[1]
  check(third.title == "Third" and third.cover_front == "", "Filename title retained; generic image is not used as a box face")

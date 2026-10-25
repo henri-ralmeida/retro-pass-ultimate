@@ -70,6 +70,9 @@ var chakra: Font = preload("res://assets/fonts/ChakraPetch-Regular.ttf")
 var transition: Tween
 var last_input_source := ""
 var model_bounds := AABB()
+@export var exhibit_enabled := true
+var exhibit: Node3D
+var normal_bounds := AABB()
 @export var library_enabled := true
 var library_state := "system"
 var library_view
@@ -503,8 +506,9 @@ func _layout() -> void:
  var compact := s.x < 900
  header.position = Vector2(30,24)
  header.add_theme_font_size_override("font_size",15 if compact else 18)
- viewport_container.position = Vector2(s.x*0.08,s.y*0.18).lerp(Vector2(s.x*0.015,s.y*0.25),history_blend)
- viewport_container.size = Vector2(s.x*0.84,s.y*0.44).lerp(Vector2(s.x*0.48,s.y*0.35),history_blend)
+ var exhibit_layout := is_instance_valid(exhibit)
+ viewport_container.position = Vector2(s.x*0.08,s.y*(0.10 if exhibit_layout else 0.18)).lerp(Vector2(s.x*0.015,s.y*0.25),history_blend)
+ viewport_container.size = Vector2(s.x*0.84,s.y*(0.53 if exhibit_layout else 0.44)).lerp(Vector2(s.x*0.48,s.y*0.35),history_blend)
  if inspect_mode:
   viewport_container.position = Vector2(s.x*0.08,s.y*0.17)
   viewport_container.size = Vector2(s.x*0.84,s.y*0.57)
@@ -540,11 +544,22 @@ func _layout() -> void:
 
 func _frame_model() -> void:
  if systems.is_empty() or not camera: return
+ _sync_exhibit_visibility()
  var data = systems[current_index]
  var ratio := viewport_container.size.x/maxf(viewport_container.size.y,1.0)
  camera.look_at(presentation.to_global(model_bounds.get_center()) if inspect_mode else data.camera_target)
  camera.keep_aspect = Camera3D.KEEP_HEIGHT
  camera.size = data.framing_size * maxf(1.0,1.8/ratio)
+ if is_instance_valid(exhibit) and exhibit.visible:
+  normal_bounds = exhibit.get_combined_bounds()
+  var normal_center := presentation.to_global(normal_bounds.get_center())
+  camera.look_at(normal_center)
+  var normal_extent := Vector2.ZERO
+  for index in 8:
+   var corner := camera.global_basis.inverse() * (presentation.to_global(normal_bounds.get_endpoint(index))-normal_center)
+   normal_extent.x = maxf(normal_extent.x, absf(corner.x)*2.0)
+   normal_extent.y = maxf(normal_extent.y, absf(corner.y)*2.0)
+  camera.size = maxf(normal_extent.y, normal_extent.x/ratio)*1.10
  if inspect_mode:
   var extent := Vector2.ZERO
   var center := model_bounds.get_center()
@@ -556,6 +571,11 @@ func _frame_model() -> void:
   camera.size = maxf(extent.y,extent.x/ratio) * 1.48 / inspection_zoom
 
 func _show_system() -> void:
+ if is_instance_valid(exhibit):
+  exhibit.set_exhibit_visible(false)
+  exhibit.get_parent().remove_child(exhibit)
+  exhibit.queue_free()
+  exhibit = null
  if model: model.queue_free()
  var data = systems[current_index]
  model = data.model.instantiate()
@@ -583,7 +603,30 @@ func _show_system() -> void:
  if console_button:
   console_button.tooltip_text = "Selecionar " + data.display_name
   console_button.accessibility_name = "Selecionar " + data.display_name
+ _rebuild_exhibit()
  _layout()
+
+func _rebuild_exhibit() -> void:
+ if is_instance_valid(exhibit):
+  exhibit.set_exhibit_visible(false)
+  exhibit.get_parent().remove_child(exhibit)
+  exhibit.queue_free()
+  exhibit = null
+ if not exhibit_enabled or not library_enabled or not is_instance_valid(library_view) or not is_instance_valid(model): return
+ if library_view.ITEMS.is_empty(): return
+ var selected: Dictionary = library_view.ITEMS[clampi(library_view.current_index,0,library_view.ITEMS.size()-1)]
+ # No invented default title/art: reuse only the current catalog entry.
+ exhibit = load("res://cosmic/exhibit_scene.gd").new()
+ exhibit.name = "FloatingSelectedGameExhibit"
+ presentation.add_child(exhibit)
+ if not exhibit.configure_extras(model, selected):
+  push_warning("Exhibit incomplete: " + str(exhibit.configuration_errors))
+ _sync_exhibit_visibility()
+
+func _sync_exhibit_visibility() -> void:
+ if is_instance_valid(exhibit):
+  var retain_during_entry := library_state == "entering" and not reduced_motion and entry_progress < 0.94
+  exhibit.set_exhibit_visible(not inspect_mode and not history_open and history_blend <= 0.001 and (library_state == "system" or retain_during_entry))
 
 func _collect_bounds(node: Node3D) -> AABB:
  var result := AABB()
@@ -705,6 +748,7 @@ func open_history(automatic: bool = false) -> void:
  reset_dwell()
  auto_history_armed = false
  history_open = true
+ _sync_exhibit_visibility()
  var data = systems[current_index]
  history_body.text = data.history_text + "\n\n" + data.history_credits if not data.history_text.is_empty() else "Texto histórico em preparação."
  history_panel.visible = true
@@ -1121,6 +1165,7 @@ func enter_library() -> void:
  auto_history_armed = false
  inspection_dragging = false
  library_state = "entering"
+ _sync_exhibit_visibility()
  entry_start_size = camera.size
  presentation.position = Vector3.ZERO
  ui.hide()
@@ -1134,11 +1179,13 @@ func enter_library() -> void:
 
 func _apply_entry(value: float) -> void:
  entry_progress = value
+ _sync_exhibit_visibility()
  bg_material.set_shader_parameter("entry_warp",0.0 if reduced_motion else sin(value*PI))
  var data = systems[current_index]
  var s := get_viewport().get_visible_rect().size
- viewport_container.position = Vector2(s.x*0.08,s.y*0.18).lerp(Vector2.ZERO,value)
- viewport_container.size = Vector2(s.x*0.84,s.y*0.44).lerp(s,value)
+ var exhibit_layout := is_instance_valid(exhibit)
+ viewport_container.position = Vector2(s.x*0.08,s.y*(0.10 if exhibit_layout else 0.18)).lerp(Vector2.ZERO,value)
+ viewport_container.size = Vector2(s.x*0.84,s.y*(0.53 if exhibit_layout else 0.44)).lerp(s,value)
  camera.position = data.camera_position.lerp(Vector3(0.035,0.07,0.16),value)
  camera.look_at(data.camera_target)
  camera.size = lerpf(entry_start_size,0.038,value)
@@ -1147,6 +1194,7 @@ func _apply_entry(value: float) -> void:
 func _finish_library_entry() -> void:
  bg_material.set_shader_parameter("entry_warp",0.0)
  library_state = "library"
+ _sync_exhibit_visibility()
  viewport_container.hide()
  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
  library_view.open()
@@ -1166,6 +1214,7 @@ func leave_library() -> void:
  entry_veil.hide()
  entry_veil.color.a = 0.0
  library_state = "system"
+ _rebuild_exhibit()
  entry_progress = 0.0
  bg_material.set_shader_parameter("entry_warp",0.0)
  ui.show()

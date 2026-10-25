@@ -7,7 +7,9 @@ const MEDIA_FIELDS := {
  "boxart": "cover_front", "cover": "cover_front",
  "cover_front": "cover_front", "boxfront": "cover_front",
  "cover_back": "cover_back", "boxback": "cover_back", "back": "cover_back",
- "cover_spine": "cover_spine", "boxspine": "cover_spine", "spine": "cover_spine"
+ "cover_spine": "cover_spine", "boxspine": "cover_spine", "spine": "cover_spine",
+ "cartridge_label": "cartridge_label", "cartridge_top": "cartridge_top",
+ "wheel": "wheel", "marquee": "wheel"
 }
 
 func scan_folder(folder: String, options: Dictionary = {}) -> Dictionary:

@@ -12,6 +12,8 @@ Exemplo de estrutura:
 {"items":[{"id":"wonder_boy","title":"Wonder Boy","subtitle":"MASTER SYSTEM","cover_front":"wonder_boy_front.png","cover_spine":"wonder_boy_spine.png","cover_back":"wonder_boy_back.png"}]}
 ```
 
+Campos opcionais `cartridge_label` e `cartridge_top` associam separadamente a frente e o topo do cartucho. `wheel` conserva um logo local para futura apresentação; ainda não é exibido. O scanner aceita esses nomes explícitos em `gamelist.xml` e também `marquee` como wheel. Nenhuma capa é reutilizada automaticamente como label.
+
 Use imagens da mesma edição. Uma frente de uma edição não deve ser combinada silenciosamente com lombada/verso de outra. Faces ausentes não são reconstruídas como se fossem originais.
 
 ## Prévia de desenvolvimento

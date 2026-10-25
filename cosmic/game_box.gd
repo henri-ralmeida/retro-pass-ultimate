@@ -138,7 +138,12 @@ func _restore_original_art(data: Dictionary) -> void:
 		var face: String = {"Box_FRONT":"front", "Box_BACK":"back", "Box_LEFT_SPINE":"spine"}.get(str(mesh.name), "")
 		# Independent scraped/local faces fill their own UV rectangle, not the full
 		# original wraparound atlas. Missing faces stay neutral, never inherit a game.
-		if not face.is_empty() and mesh.mesh.get_surface_count() == 1:
+		var supplied_label := false
+		if mesh.mesh.get_surface_count() == 1:
+			var material_name: String = mesh.mesh.surface_get_material(0).resource_name
+			var label_field: String = {"SLOT_CART_LABEL":"cartridge_label", "SLOT_CART_TOP":"cartridge_top"}.get(material_name, "")
+			supplied_label = not label_field.is_empty() and not str(data.get(label_field, "")).is_empty()
+		if (not face.is_empty() or supplied_label) and mesh.mesh.get_surface_count() == 1:
 			var arrays: Array = mesh.mesh.surface_get_arrays(0)
 			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
 			var low := Vector2(INF,INF)
@@ -163,6 +168,9 @@ func _restore_original_art(data: Dictionary) -> void:
 				var texture := load_artwork(path + ".png") if not str(data.get("art_root", "")).is_empty() else null
 				if texture == null and not str(data.get("art_root", "")).is_empty(): texture = load_artwork(path + ".jpg")
 				if not face.is_empty(): texture = _texture(data,face)
+				var cartridge_field: String = {"SLOT_CART_LABEL":"cartridge_label", "SLOT_CART_TOP":"cartridge_top"}.get(material.resource_name, "")
+				if not cartridge_field.is_empty() and not str(data.get(cartridge_field, "")).is_empty():
+					texture = load_artwork(str(data[cartridge_field]))
 				copy.albedo_texture = texture
 				copy.albedo_color = Color.WHITE if texture else Color("27313d")
 				mesh.set_surface_override_material(surface, copy)

@@ -27,6 +27,12 @@ Este repositório contém código-fonte, não um executável Windows já validad
 
 Somente Master System. Entrar aproxima a câmera do console e revela uma biblioteca de caixas 3D, com frente, lombada e verso. O protótipo não emula jogos, mas as capas devem corresponder às embalagens originais disponíveis, sem reinterpretar a arte. As mídias são carregadas de um manifesto local; não são distribuídas automaticamente por este repositório. Sem mídia configurada, a interface informa sua ausência em vez de inventar uma capa. Veja `docs/ARTES_LOCAIS.md`. Não há ROMs, execução de jogos, biblioteca pessoal conectada ou integração RetroAchievements. Nenhuma homologação Hardcore é alegada. Movimento reduzido troca de cena sem a animação de entrada; Voltar cancela a transição ou retorna ao console.
 
+## Exposição do jogo selecionado
+
+A seleção exibe dois controles reutilizados com cabos ligados aos conectores, caixa aberta e um único cartucho do mesmo item do catálogo, assentado no encaixe superior. Ao voltar da biblioteca, acompanha a seleção atual; não sorteia nem mistura mídias. A inspeção dedicada continua isolando o console aprovado. A posição do cabo no controle segue a referência visual, com deslocamento aproximado documentado.
+
+O encaixe é uma apresentação estática, não a animação de inserção ainda planejada. Labels só aparecem quando fornecidos explicitamente para aquele item. Wheel e manual reais ainda não foram fornecidos; o leitor integrado e a obtenção online permanecem pendentes.
+
 ## Testes
 
 Execute no diretório do projeto, por exemplo:
@@ -42,6 +48,9 @@ Execute no diretório do projeto, por exemplo:
     godot --headless --path . --script cosmic/test_library_propagation.gd
     godot --headless --path . --script cosmic/test_library_catalog.gd
     godot --headless --path . --script cosmic/test_collection_scan.gd
+    godot --headless --path . --script cosmic/test_game_media.gd
+    godot --headless --path . --script cosmic/test_exhibit.gd
+    godot --headless --path . --script cosmic/test_exhibit_integration.gd
     godot --headless --path . --script cosmic/test_zoom_stress.gd
 
 Em Linux/macOS, `bash tools/verify_project.sh` executa a importação, a suíte e a auditoria de imagens antigas em sequência.

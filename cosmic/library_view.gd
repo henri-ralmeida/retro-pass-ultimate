@@ -38,7 +38,7 @@ func _load_items(path_override: String = "") -> void:
     data["subtitle"] = str(data.get("subtitle", "MASTER SYSTEM"))
     data["accent"] = str(data.get("accent", "9dd8f2"))
     data["description"] = str(data.get("description", "Capa do acervo local. Frente, lombada e verso independentes."))
-    for field in ["cover_front", "cover_spine", "cover_back", "cover_edge", "model_path", "uv_path", "art_root"]:
+    for field in ["cover_front", "cover_spine", "cover_back", "cover_edge", "cartridge_label", "cartridge_top", "wheel", "model_path", "uv_path", "art_root"]:
      var key: String = field
      if key in ["model_path", "uv_path"] and str(data.get(key, "")).is_empty():
       data.erase(key)
