@@ -20,7 +20,7 @@ static func build(config: Dictionary, items: Array) -> Dictionary:
  var files := {}
  var games := {}
  for item in items:
-  if not item is Dictionary or item.get("system", "") != config.system: continue
+  if not item is Dictionary or Association.canonical_system(item) != config.system: continue
   var game_id := str(item.get("id", ""))
   if game_id.is_empty(): continue
   var media: Variant = item.get("media_metadata", {})
