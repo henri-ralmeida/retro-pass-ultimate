@@ -5,7 +5,7 @@ Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual 
 ## Executar
 
 1. Clone este repositório ou faça pull das atualizações.
-2. Importe `project.godot` no Godot 4.6.3 e aguarde a importação dos recursos. Essa é a versão efetivamente testada; versões mais novas ainda precisam de validação.
+2. Importe `project.godot` no Godot 4.6.3 e aguarde a importação dos recursos. Essa é a versão efetivamente testada; versões mais novas ainda precisam de validação. A fonte 4K é preservada e o atlas de runtime mantém os mesmos pixels 2K já usados anteriormente; veja [importação e identidade dos pixels](docs/IMPORTACAO_RECURSOS.md).
 3. Pressione F5. O renderizador é Compatibility.
 
 Este repositório contém código-fonte, não um executável Windows já validado. Blender não é necessário para executar.
@@ -27,13 +27,13 @@ Este repositório contém código-fonte, não um executável Windows já validad
 
 ## Escopo atual
 
-Somente Master System. Entrar aproxima a câmera do console e revela uma biblioteca de caixas 3D, com frente, lombada e verso. O protótipo não emula jogos, mas as capas devem corresponder às embalagens originais disponíveis, sem reinterpretar a arte. As mídias são carregadas de um manifesto local; não são distribuídas automaticamente por este repositório. Sem mídia configurada, a interface informa sua ausência em vez de inventar uma capa. Veja `docs/ARTES_LOCAIS.md`. Não há ROMs, execução de jogos, biblioteca pessoal conectada ou integração RetroAchievements. Nenhuma homologação Hardcore é alegada. Movimento reduzido troca de cena sem a animação de entrada; Voltar cancela a transição ou retorna ao console.
+Somente Master System. Entrar aproxima a câmera do console e revela uma biblioteca de caixas 3D, com frente, lombada e verso. O protótipo não emula jogos, mas as capas devem corresponder às embalagens originais disponíveis, sem reinterpretar a arte. O menu usa três cards reutilizáveis e até cinco caixas residentes, com escolha aleatória inicial estável e navegação explícita preservada. As mídias são carregadas de um manifesto local; não são distribuídas automaticamente por este repositório. Sem mídia configurada, a interface informa sua ausência em vez de inventar uma capa. Veja `docs/ARTES_LOCAIS.md`. Não há ROMs, execução de jogos, biblioteca pessoal conectada ou integração RetroAchievements. Nenhuma homologação Hardcore é alegada. Movimento reduzido troca de cena sem a animação de entrada; Voltar cancela a transição ou retorna ao console.
 
 ## Exposição do jogo selecionado
 
 A seleção exibe dois controles reutilizados, cabos com comprimento nominal de 2 m organizados em voltas suaves, plugues moldados com alívio de tensão, caixa aberta ao fundo e um único cartucho do mesmo item do catálogo. Caixa e cartucho mantêm a escala nativa; ao voltar da biblioteca, o conjunto acompanha a seleção atual, sem misturar mídias. A caixa de fundo fica à esquerda, sem sobrepor o console, e mostra verso, lombada e frente em perspectiva própria; a câmera e os controles do console são preservados. A inspeção dedicada continua isolando o console. O carregador opcional de hardware local restaura os materiais e estampas REV2; sem esse recurso, a interface informa a ausência das texturas em vez de apresentar o controle neutro como equivalente. Veja [recursos locais](docs/HARDWARE_LOCAL.md) e [geometria da exposição](docs/EXPOSICAO_3D.md).
 
-O encaixe é uma apresentação estática com abertura visual reversível da carcaça, não a animação de inserção ainda planejada. A articulação da caixa foi corrigida no runtime sem modificar sua geometria fechada ou o GLB original. Labels só aparecem quando fornecidos explicitamente para aquele item. Wheel e manual reais ainda não foram fornecidos. O leitor integrado aceita páginas PNG/JPEG locais explicitamente vinculadas ao jogo, sem substituir páginas ausentes; PDF e obtenção online permanecem pendentes. Veja [manual local](docs/MANUAL_LOCAL.md). A abertura da caixa e a extração do cartucho são apresentação, não execução nem inserção animada no console.
+O encaixe é uma apresentação estática com abertura visual reversível da carcaça, não a animação de inserção ainda planejada. A articulação da caixa foi corrigida no runtime sem modificar sua geometria fechada ou o GLB original. Labels só aparecem quando fornecidos explicitamente para aquele item. O manual original de Wonder Boy foi validado em configuração privada com suas 32 páginas; as digitalizações não fazem parte deste repositório. Wheel original não foi fornecida nessa configuração: quando houver uma imagem vinculada à entrada ela substitui o título, e quando não houver o texto legível permanece. O leitor integrado recebe o mesmo livreto sob as presilhas, apresenta folhas 3D e oferece leitura ampliada das páginas PNG/JPEG locais vinculadas ao jogo, sem substituir páginas ausentes; conversão de PDF no aplicativo e obtenção online permanecem pendentes. Veja [manual local](docs/MANUAL_LOCAL.md). A abertura da caixa e a extração do cartucho são apresentação, não execução nem inserção animada no console.
 
 ## Testes
 
@@ -64,3 +64,7 @@ Relatórios gerados ficam em `evidence/cosmic/`, fora do versionamento. Testes h
 Veja `LEIA-ME_SISTEMAS_NO_INFINITO.md` e os documentos de procedência junto aos assets. Fontes incluem licenças OFL. Nomes e marcas pertencem aos seus titulares; não há licença comercial presumida para marcas. As inscrições foram reconstruídas em SVG e rasterizadas em 4K, sem a fotografia de loja usada no protótipo anterior. O runtime limita o atlas a 2K sem perdas, com mipmaps e filtro anisotrópico; os fontes 4K permanecem editáveis. A tipografia do wordmark é uma aproximação documentada, não a fonte industrial original.
 
 Não incluir jogos, saves, credenciais, caches, builds ou mídias pessoais neste repositório público.
+
+## Próximos incrementos de configuração
+
+Tour inicial opcional para escolher o Master System, uma pasta local e categorias de mídia desejadas (capas, imagens, wheel e manual), com opção de pular e configurar depois. A fila deve distinguir importação/processamento local de download e contar arquivos de mídia, não presumir um arquivo por jogo. Essas telas e a obtenção online ainda não estão implementadas. Nenhum fluxo baixa ROMs.

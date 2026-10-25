@@ -40,7 +40,7 @@ func run() -> void:
  var cover_center: Vector3 = exhibit.relative_transform(cover)*cover.get_aabb().get_center()
  check((cover_center-exhibit.bounds_of(scene.model).get_center()).dot(exhibit.presentation_basis.z)<-0.15,"Open box cover is behind console in camera depth")
  check(exhibit.inserted_cartridge.get_meta("selected_game_id")==exhibit.selected_item.id,"Inserted cartridge retains selected identity")
- check(not exhibit.manual_available,"No fictitious manual pages")
+ check(exhibit.manual_available == (exhibit.game_box.manual_book != null and exhibit.game_box.manual_book.configured),"Manual availability reflects only validated same-entry physical booklet")
  var actual_missing: bool = exhibit.hardware_art_missing
  exhibit.hardware_art_missing = true
  scene._sync_exhibit_visibility()

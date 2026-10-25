@@ -1209,6 +1209,7 @@ func _build_library() -> void:
  library_view = load("res://cosmic/library_view.gd").new()
  ui.get_parent().add_child(library_view)
  library_view.configure(self)
+ library_view.begin_catalog_visit()
  library_view.exit_requested.connect(leave_library)
  library_view.hide()
  entry_veil = ColorRect.new()

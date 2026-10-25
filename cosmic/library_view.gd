@@ -7,6 +7,11 @@ signal exit_requested
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
 const GameBox = preload("res://cosmic/game_box.gd")
 const BoxPresentation = preload("res://cosmic/box_presentation.gd")
+const CatalogWindow = preload("res://cosmic/library_window.gd")
+const CatalogChoice = preload("res://cosmic/catalog_choice.gd")
+var catalog_choice := CatalogChoice.new()
+var catalog_visit_started := false
+var catalog_window := CatalogWindow.new()
 const DEFAULT_MANIFEST := "res://assets/local_box_art/manifest.json"
 # Public checkout contains no proprietary sleeve artwork and never invents it.
 var ITEMS: Array[Dictionary] = []
@@ -19,8 +24,22 @@ var scan_mutex := Mutex.new()
 var scan_cancelled := false
 var carousel: Node3D
 var neighbor_boxes: Array[Node3D] = []
+var manual_framing_active := false
+var manual_framing_for_open := false
+var manual_framing_progress := 0.0
+var manual_framing_from := 1.0
+var manual_framing_to := 1.0
+var manual_saved_zoom := -1.0
+const MANUAL_FRAMING_SECONDS := 0.24
+var manual_release_diagnostics: Array[Dictionary] = []
+var manual_release: RefCounted
+var manual_release_progress := 0.0
+var manual_release_direction := 0
+var manual_release_teardown := false
+const MANUAL_RELEASE_DURATION := 0.85
 var manual_reader: Control
 var manual_button: Button
+var item_wheel: TextureRect
 var manual_status := "Manual indisponível para este jogo."
 
 func _load_items(path_override: String = "") -> void:
@@ -62,6 +81,17 @@ func _load_items(path_override: String = "") -> void:
     ITEMS.append(data)
  if ITEMS.is_empty():
   ITEMS.append({"id":"unavailable", "title":"Acervo indisponível", "subtitle":"MASTER SYSTEM · SEM CAPAS LOCAIS", "accent":"9dd8f2", "description":"Nenhuma capa local disponível. A caixa permanece sem arte, sem substituições fictícias."})
+
+ catalog_choice.update_catalog(ITEMS)
+
+func begin_catalog_visit() -> void:
+ # A visit starts explicitly, never from redraw, focus, inspection or Back.
+ catalog_choice.update_catalog(ITEMS)
+ catalog_choice.end_visit()
+ catalog_choice.begin_visit()
+ catalog_visit_started = true
+ var chosen := catalog_choice.get_selected_index()
+ if chosen >= 0: _select(chosen)
 
 const BOX_BOUNDS := AABB(Vector3(-0.87,-1.22,-0.15),Vector3(1.74,2.44,0.30))
 const DEFAULT_YAW := 0.40
@@ -152,11 +182,17 @@ func _build() -> void:
  _load_items()
  _build_world()
  heading = _label("MASTER SYSTEM  /  BIBLIOTECA",orbitron,17,Color("dedeea"))
- disclosure = _label("Acervo local · sem jogos",chakra,15,Color("a8b9d3"))
+ disclosure = _label("Acervo local · sem execução",chakra,15,Color("a8b9d3"))
  chapter = _label("01  /  ACERVO LOCAL",chakra,14,Color("9dd8f2"))
  item_title = _label("",orbitron,28,Color("f5f1ff"))
  item_title.clip_text = true
  item_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+ item_wheel = TextureRect.new()
+ item_wheel.name = "SelectedGameWheel"
+ item_wheel.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+ item_wheel.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+ item_wheel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ add_child(item_wheel)
  item_subtitle = _label("",chakra,16,Color("bdc5de"))
  item_subtitle.clip_text = true
  item_subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -187,7 +223,7 @@ func _build() -> void:
  for button in [previous_button,next_button]:
   button.add_theme_font_size_override("font_size",32)
   add_child(button)
- for index in ITEMS.size(): _build_card(index)
+ for index in mini(ITEMS.size(),CatalogWindow.MAX_CARD_SLOTS): _build_card(index)
  footer = HBoxContainer.new()
  footer.alignment = BoxContainer.ALIGNMENT_CENTER
  footer.add_theme_constant_override("separation",14)
@@ -198,11 +234,11 @@ func _build() -> void:
  reset_button = _mapped_button("reset","Restaurar","Restaurar o ângulo e o zoom da caixa",reset_inspection)
  motion_button = _mapped_button("motion","Pausar","Reduzir o movimento do fundo cósmico",_toggle_motion)
  back_button = _mapped_button("back","Voltar","Voltar ao Master System",go_back)
- manual_button = _plain_button("Manual","Ler o manual deste jogo",_open_manual)
+ manual_button = _mapped_button("confirm","Manual","Ler o manual deste jogo",_open_manual)
  for state in ["normal","hover","pressed","disabled"]: manual_button.add_theme_stylebox_override(state,StyleBoxEmpty.new())
  manual_button.custom_minimum_size = Vector2(132,46)
  for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]: footer.add_child(button)
- manual_reader = load("res://cosmic/manual_reader.gd").new()
+ manual_reader = load("res://cosmic/manual_book_reader.gd").new()
  add_child(manual_reader)
  manual_reader.configure(host)
  manual_reader.closed.connect(_manual_closed)
@@ -345,7 +381,8 @@ func _mapped_button(action: String, value: String, tip: String, callback: Callab
 
 func _build_card(index: int) -> void:
  var data: Dictionary = ITEMS[index]
- var button := _plain_button("","Selecionar caixa: " + str(data.title),func(): _select(index))
+ var button := _plain_button("","Selecionar caixa: " + str(data.title),func(): _activate_card(index))
+ button.set_meta("catalog_index",index)
  button.name = "LibraryCard" + str(index)
  button.alignment = HORIZONTAL_ALIGNMENT_LEFT
  add_child(button)
@@ -366,12 +403,38 @@ func _build_card(index: int) -> void:
  title_label.position = Vector2(67,13)
  button.add_child(title_label)
  var subtitle_label := _label(data.subtitle,chakra,11,Color("a4b1cc"))
+ subtitle_label.name = "CardSubtitle"
  subtitle_label.position = Vector2(68,40)
  button.add_child(subtitle_label)
  var number := _label("0" + str(index+1),orbitron,12,Color(data.accent))
  number.name = "CardNumber"
  number.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
  button.add_child(number)
+
+func _activate_card(slot: int) -> void:
+ if slot >= 0 and slot < cards.size(): _select(int(cards[slot].get_meta("catalog_index",-1)))
+
+func _sync_card_window() -> void:
+ var focused := get_viewport().gui_get_focus_owner()
+ var focused_index := int(focused.get_meta("catalog_index",-1)) if focused in cards else -1
+ if catalog_window.count != ITEMS.size(): catalog_window.configure(ITEMS.size(),current_index)
+ else: catalog_window.select_index(current_index)
+ var retained_focus: Button
+ var selected_card: Button
+ for entry in catalog_window.card_slots():
+  var card := cards[int(entry.slot)]
+  var data: Dictionary = ITEMS[int(entry.index)]
+  card.set_meta("catalog_index",int(entry.index))
+  card.accessibility_name = "Selecionar caixa: " + str(data.title)
+  card.tooltip_text = str(data.title)
+  card.get_node("CardTitle").text = str(data.title)
+  card.get_node("CardSubtitle").text = str(data.subtitle)
+  card.get_node("CardNumber").text = "%02d" % (int(entry.index)+1)
+  if entry.index == focused_index: retained_focus = card
+  if entry.index == current_index: selected_card = card
+ if focused_index >= 0:
+  if retained_focus: retained_focus.grab_focus()
+  elif selected_card: selected_card.grab_focus()
 
 func _cancel_scan() -> void:
  scan_mutex.lock()
@@ -432,10 +495,10 @@ func _finish_scan() -> void:
  cards.clear()
  card_textures.clear()
  _load_items("user://collection_catalog.json")
- for index in ITEMS.size(): _build_card(index)
+ for index in mini(ITEMS.size(),CatalogWindow.MAX_CARD_SLOTS): _build_card(index)
  inspect_mode = false
- _select(0)
- disclosure.text = "%d jogos locais · ScreenScraper não configurado · sem execução" % ITEMS.size()
+ begin_catalog_visit()
+ disclosure.text = "%d entradas locais · ScreenScraper não configurado · sem execução" % ITEMS.size()
  if not result.get("warnings", []).is_empty():
   disclosure.text += " · %d avisos" % result.warnings.size()
   disclosure.tooltip_text = "\n".join(result.warnings)
@@ -443,6 +506,7 @@ func _finish_scan() -> void:
  scan_button.grab_focus()
 
 func _exit_tree() -> void:
+ _reset_manual_release(false)
  presentation.teardown()
  if scan_thread != null:
   _cancel_scan()
@@ -462,7 +526,7 @@ func open() -> void:
  confirm_button.grab_focus()
 
 func close() -> void:
- if is_instance_valid(manual_reader): manual_reader.close()
+ _reset_manual_release()
  if scan_dialog: scan_dialog.hide()
  cancel_drag()
  _reset_presentation()
@@ -477,9 +541,10 @@ func navigate(direction: int) -> void:
 
 func _select(index: int) -> void:
  if inspect_mode or approach_busy or index < 0 or index >= ITEMS.size(): return
- if is_instance_valid(manual_reader) and manual_reader.visible: manual_reader.close()
+ _reset_manual_release()
  presentation.teardown()
  current_index = index
+ if catalog_visit_started: catalog_choice.select_explicit(str(ITEMS[index].get("id", "")))
  var data: Dictionary = ITEMS[index]
  if box:
   pivot.remove_child(box)
@@ -493,16 +558,20 @@ func _select(index: int) -> void:
   presentation.configure(box)
  _refresh_manual_availability(data)
  item_title.text = data.title
+ item_wheel.texture = GameBox.load_artwork(data.get("wheel",null),512)
+ item_wheel.accessibility_name = "Logo local: " + str(data.title)
+ item_wheel.tooltip_text = str(data.title)
  item_title.tooltip_text = data.title
  item_title.accessibility_name = data.title
  item_subtitle.text = data.subtitle
  description.text = data.description
  chapter.text = "%02d  /  ACERVO LOCAL" % (index+1)
  chapter.add_theme_color_override("font_color",Color(data.accent))
- position_label.text = "%02d  /  %02d" % [index+1,ITEMS.size()]
+ position_label.text = "%02d  /  %02d" % [index+1,ITEMS.size()] if not ITEMS.is_empty() and str(ITEMS[index].get("id","")) != "unavailable" else "00  /  00"
+ _sync_card_window()
  for card_index in cards.size():
   var card := cards[card_index]
-  var active := card_index == current_index
+  var active := int(card.get_meta("catalog_index",-1)) == current_index
   card.add_theme_stylebox_override("normal",_panel_style(Color(0.075,0.14,0.22,0.85) if active else Color(0.04,0.06,0.12,0.66),Color("709ebd") if active else Color(0.42,0.55,0.75,0.23)))
   card.accessibility_description = "Capa selecionada" if active else "Outra caixa do acervo local"
  _refresh_card_textures()
@@ -511,15 +580,18 @@ func _select(index: int) -> void:
  layout()
 
 func _refresh_card_textures() -> void:
- for index in cards.size():
-  var distance := mini(posmod(index-current_index,ITEMS.size()),posmod(current_index-index,ITEMS.size()))
-  card_textures[index].texture = GameBox.load_artwork(ITEMS[index].get("cover_front", null)) if distance <= 2 else null
+ # These compact title tabs never display thumbnails. Do not decode hidden
+ # images: the selected real box already owns the visible artwork.
+ for image in card_textures: image.texture = null
  var missing: Array[String] = []
  for face in ["front", "spine", "back"]:
   if GameBox.load_artwork(ITEMS[current_index].get("cover_" + face, null)) == null:
    missing.append({"front":"frente", "spine":"lombada", "back":"verso"}[face])
  description.text = "Capa indisponível" if missing.size() == 3 else ("Arte parcial" if not missing.is_empty() else "")
  description.tooltip_text = "Arte indisponível: " + ", ".join(missing) if not missing.is_empty() else ""
+ if str(ITEMS[current_index].get("file_status","")) == "missing":
+  description.text = "Arquivo ausente no inventário"
+  description.tooltip_text = "Registro preservado para consulta, excluído do sorteio. " + description.tooltip_text
 
 func _build_neighbors() -> void:
  for node in neighbor_boxes:
@@ -533,7 +605,9 @@ func _build_neighbors() -> void:
   if used.has(index): continue
   used[index] = true
   var neighbor := GameBox.new()
-  neighbor.configure(ITEMS[index])
+  var neighbor_data: Dictionary = ITEMS[index].duplicate(true)
+  neighbor_data["_runtime_art_max_side"] = GameBox.ArtworkCache.NEIGHBOR_MAX_SIDE
+  neighbor.configure(neighbor_data)
   carousel.add_child(neighbor)
   var side := signf(float(offset))
   neighbor.position = Vector3(side * (2.05 + (abs(offset)-1)*1.25), -0.12, -1.25 - (abs(offset)-1)*0.9)
@@ -544,7 +618,7 @@ func _build_neighbors() -> void:
  carousel.visible = true
 
 func _can_interact() -> bool:
- return visible and built and host.get("application_focused") != false and host.get("scene_active") != false and not scan_dialog.visible
+ return not manual_framing_active and manual_release_direction == 0 and visible and built and host.get("application_focused") != false and host.get("scene_active") != false and not scan_dialog.visible
 
 func _reduced_motion() -> bool:
  return host.get("reduced_motion") == true
@@ -604,6 +678,14 @@ func _toggle_motion() -> void:
  refresh_controls()
 
 func go_back() -> void:
+ if manual_framing_active:
+  _start_manual_framing(manual_saved_zoom if manual_saved_zoom > 0 else manual_framing_from,false)
+  return
+ if manual_release_direction != 0:
+  if is_instance_valid(manual_release): manual_release.begin_return()
+  manual_release_direction = -1
+  if _reduced_motion(): _advance_manual_release(0.0)
+  return
  if is_instance_valid(manual_reader) and manual_reader.visible:
   manual_reader.close()
   return
@@ -687,6 +769,7 @@ func _advance_presentation(delta: float) -> void:
  _update_inspection_view()
 
 func reset_inspection() -> void:
+ if manual_framing_active or manual_release_direction != 0: return
  cancel_drag()
  if returning_to_carousel or approach_busy: return
  presentation_rotation_active = false
@@ -699,6 +782,7 @@ func reset_inspection() -> void:
  _apply_rotation()
 
 func rotate_inspection(relative: Vector2) -> void:
+ if manual_framing_active or manual_release_direction != 0: return
  if not inspect_mode or approach_busy or returning_to_carousel: return
  presentation_rotation_active = false
  yaw = wrapf(yaw + relative.x * 0.008,-PI,PI)
@@ -706,6 +790,7 @@ func rotate_inspection(relative: Vector2) -> void:
  _apply_rotation()
 
 func zoom_inspection(amount: float) -> void:
+ if manual_framing_active or manual_release_direction != 0: return
  if not inspect_mode or approach_busy or returning_to_carousel: return
  zoom = clampf(zoom+amount,ZOOM_MIN,ZOOM_MAX)
  _frame_box()
@@ -764,7 +849,7 @@ func refresh_controls() -> void:
  var gamepad: bool = host.get("input_device") == "gamepad"
  var name_value: String = str(host.get("active_pad_name"))
  var profile = host.get("input_profile")
- for button in [confirm_button,inspect_button,reset_button,motion_button,back_button]:
+ for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
   var action: String = button.get_meta("action","")
   var glyph = button.find_child("InputGlyph",true,false)
   if glyph and profile:
@@ -773,8 +858,12 @@ func refresh_controls() -> void:
  var presented := presentation.state == &"presented" and not returning_to_carousel
  confirm_button.visible = not presented
  if is_instance_valid(manual_button):
+  var became_available := presented and not manual_button.visible
   manual_button.visible = presented
   manual_button.disabled = not manual_status.is_empty()
+  if became_available and not manual_button.disabled: manual_button.grab_focus()
+ inspect_button.visible = not inspect_mode
+ motion_button.visible = not inspect_mode
  confirm_button.disabled = not presentation.available
  var confirm_label = confirm_button.find_child("ActionLabel",true,false)
  var confirm_text := "Apresentado" if presentation.state == &"presented" else "Abrir"
@@ -849,11 +938,8 @@ func layout() -> void:
  collection_label.visible = false
  # The coverflow is the collection, not a flat card list. Compact title tabs
  # remain genuine pointer/focus targets for at most three adjacent entries.
- var visible_indices: Array[int] = [current_index]
- for offset in [-1,1]:
-  var adjacent := posmod(current_index+offset,ITEMS.size())
-  if adjacent not in visible_indices: visible_indices.append(adjacent)
- visible_indices.sort()
+ var visible_indices: Array[int] = []
+ for entry in catalog_window.card_slots(): visible_indices.append(int(entry.slot))
  var card_width := minf(230.0,(s.x-margin*2)/visible_indices.size()-8.0)
  var row_width := visible_indices.size()*(card_width+8.0)-8.0
  for index in cards.size():
@@ -874,7 +960,10 @@ func layout() -> void:
  var approach_weight := BoxPresentation._ease(approach_progress)
  viewport_container.position = Vector2(margin+24,lerpf(102.0,88.0,approach_weight))
  viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-lerpf(324.0,292.0,approach_weight)))
- item_title.visible = not inspect_mode
+ item_wheel.position = Vector2((s.x-minf(450.0,s.x-margin*2))*0.5,title_y)
+ item_wheel.size = Vector2(minf(450.0,s.x-margin*2),42)
+ item_wheel.visible = not inspect_mode and item_wheel.texture != null
+ item_title.visible = not inspect_mode and item_wheel.texture == null
  item_subtitle.visible = not inspect_mode and ITEMS.size() == 1
  chapter.visible = not inspect_mode
  previous_button.visible = not inspect_mode and ITEMS.size() > 1
@@ -937,7 +1026,7 @@ func _activate_focused() -> void:
   # Collection cards represent the selected game; other explicit UI controls
   # keep their normal confirm action (scanner, accessibility tools, manuals).
   if focused in cards:
-   var index := cards.find(focused)
+   var index := int(focused.get_meta("catalog_index",-1))
    if index != current_index: _select(index)
    confirm_selected()
   else:
@@ -959,6 +1048,11 @@ func handle_event(event: InputEvent) -> bool:
    manual_reader.cancel_drag()
    return true
   return manual_reader.handle_event(event)
+ if manual_framing_active or manual_release_direction != 0:
+  cancel_drag()
+  var release_profile = host.get("input_profile")
+  if release_profile and release_profile.action_for(event) == "back": go_back()
+  return true
  if scan_dialog.visible: return false
  if host.get("application_focused") == false or host.get("scene_active") == false:
   cancel_drag()
@@ -1065,6 +1159,12 @@ func _process(delta: float) -> void:
  if scan_dialog.visible:
   cancel_drag()
   return
+ if manual_framing_active:
+  _advance_manual_framing(delta)
+  return
+ if manual_release_direction != 0:
+  _advance_manual_release(delta)
+  return
  if inspect_mode:
   _advance_presentation(delta)
   if not rotate_axis.is_zero_approx(): rotate_inspection(rotate_axis*delta*150.0)
@@ -1084,16 +1184,197 @@ func _open_manual() -> void:
  cancel_drag()
  _refresh_manual_availability(ITEMS[current_index])
  if not manual_status.is_empty(): return
+ if manual_saved_zoom < 0.0: manual_saved_zoom = zoom
+ if is_instance_valid(box.manual_book) and box.manual_book.configured:
+  if not _configure_manual_release():
+   var has_screen_candidate := false
+   for diagnostic in manual_release_diagnostics:
+    if diagnostic.has("end_rect"): has_screen_candidate = true
+   if has_screen_candidate and zoom > 1.001:
+    _start_manual_framing(1.0,true)
+    return
+   manual_status = "Gire um pouco a caixa para liberar o manual." if has_screen_candidate else "Não foi possível liberar o livreto com segurança."
+   _restore_manual_zoom()
+   manual_button.tooltip_text = manual_status
+   manual_release = null
+   return
+  manual_release.begin_release()
+  manual_release_progress = 0.0
+  manual_release_direction = 1
+  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+  if _reduced_motion(): _advance_manual_release(0.0)
+ else:
+  # Image-only catalogs can still be read, but never simulate nonexistent clips.
+  _show_released_manual()
+
+func _start_manual_framing(target: float, for_open: bool) -> void:
+ cancel_drag()
+ manual_framing_from = zoom
+ manual_framing_to = clampf(target,ZOOM_MIN,ZOOM_MAX)
+ manual_framing_progress = 0.0
+ manual_framing_for_open = for_open
+ manual_framing_active = true
+ if _reduced_motion(): _advance_manual_framing(0.0)
+
+func _advance_manual_framing(delta: float) -> void:
+ if not manual_framing_active or not is_finite(delta) or delta < 0: return
+ manual_framing_progress = 1.0 if _reduced_motion() else minf(1.0,manual_framing_progress+delta/MANUAL_FRAMING_SECONDS)
+ zoom = lerpf(manual_framing_from,manual_framing_to,BoxPresentation._ease(manual_framing_progress))
+ _frame_box()
+ if manual_framing_progress >= 1.0:
+  manual_framing_active = false
+  if manual_framing_for_open: _open_manual()
+  else:
+   manual_saved_zoom = -1.0
+   if visible and not manual_button.disabled: manual_button.grab_focus()
+
+func _restore_manual_zoom() -> void:
+ if manual_saved_zoom > 0 and not is_equal_approx(zoom,manual_saved_zoom):
+  _start_manual_framing(manual_saved_zoom,false)
+ else: manual_saved_zoom = -1.0
+
+func _project_mesh_rect(mesh: MeshInstance3D, pose: Transform3D) -> Rect2:
+ var bounds := mesh.get_aabb()
+ var projected := Rect2()
+ var first := true
+ var pixel_scale := viewport_container.size / Vector2(viewport.size).max(Vector2.ONE)
+ for corner in 8:
+  var point := pose * bounds.get_endpoint(corner)
+  if camera.is_position_behind(point): return Rect2()
+  var screen := camera.unproject_position(point) * pixel_scale + viewport_container.global_position
+  if first: projected = Rect2(screen,Vector2.ZERO); first = false
+  else: projected = projected.expand(screen)
+ return projected
+
+func _configure_manual_release() -> bool:
+ manual_release_diagnostics.clear()
+ # The two viewports do not share depth. Handoff is allowed only once the real
+ # released book is visibly clear of the foreground cartridge, not merely 3D-clear.
+ var cartridge_rect := Rect2()
+ var first := true
+ var meshes: Array[Node] = box.cartridge.find_children("*","MeshInstance3D",true,false)
+ if box.cartridge is MeshInstance3D: meshes.append(box.cartridge)
+ for candidate in meshes:
+  var mesh := candidate as MeshInstance3D
+  var projected := _project_mesh_rect(mesh,mesh.global_transform)
+  if projected.size.x <= 0.0 or projected.size.y <= 0.0: continue
+  cartridge_rect = projected if first else cartridge_rect.merge(projected)
+  first = false
+ var page_mesh: MeshInstance3D = box.manual_book.cover
+ var stage_rect := Rect2(viewport_container.global_position,viewport_container.size).grow(-4.0)
+ var base_offset := Vector3(0.07,0.01,0)
+ var baseline = load("res://cosmic/manual_release_path.gd").new()
+ if not baseline.configure(box,box.manual_book,{"approach_offset_source_m":base_offset}):
+  manual_release_diagnostics.append({"offset":base_offset,"error":baseline.last_error})
+  return false
+ var base_pose: Transform3D = baseline.pose_for(1.0)
+ var closed_pose: Transform3D = box.manual_book.get_report().closed_lid_pose
+ var offsets: Array[Vector3] = []
+ for depth in [0.01,0.0,-0.02]:
+  for step in range(8,25): offsets.append(Vector3(float(step)*0.005,depth,0))
+ for side in [-1.0,1.0]:
+  offsets.append(Vector3(-0.075,-0.02,0))
+  offsets.append(Vector3(0,-0.02,side*0.08))
+ for offset in offsets:
+  # Cheap projection first. Only an endpoint that fits gets a fresh continuous
+  # geometry certificate; this avoids dozens of expensive plans on one click.
+  var endpoint_pose := base_pose
+  endpoint_pose.origin += closed_pose.basis.inverse() * (offset-base_offset)
+  var pose: Transform3D = box.manual_book.root.get_parent().global_transform * endpoint_pose * page_mesh.transform
+  var end_rect := _project_mesh_rect(page_mesh,pose)
+  var clear := first or not end_rect.intersects(cartridge_rect.grow(4.0))
+  var inside := stage_rect.encloses(end_rect)
+  manual_release_diagnostics.append({"offset":offset,"end_rect":end_rect,"stage_rect":stage_rect,"cartridge_rect":cartridge_rect,"clear":clear,"inside":inside})
+  if end_rect.size.x <= 2 or end_rect.size.y <= 2 or not clear or not inside: continue
+  if offset.is_equal_approx(base_offset):
+   manual_release = baseline
+   return true
+  var release = load("res://cosmic/manual_release_path.gd").new()
+  if release.configure(box,box.manual_book,{"approach_offset_source_m":offset}):
+   baseline.clear()
+   manual_release = release
+   return true
+  manual_release_diagnostics.back()["error"] = release.last_error
+ baseline.clear()
+ manual_release = null
+ return false
+
+func _advance_manual_release(delta: float) -> void:
+ if not is_finite(delta) or delta < 0.0: return
+ if manual_release_direction == 0 or not is_instance_valid(manual_release): return
+ if _reduced_motion():
+  manual_release_progress = 1.0 if manual_release_direction > 0 else 0.0
+ else:
+  manual_release_progress = clampf(manual_release_progress + float(manual_release_direction) * maxf(delta,0.0) / MANUAL_RELEASE_DURATION, 0.0, 1.0)
+ if not manual_release.apply_progress(manual_release_progress):
+  manual_status = "O percurso do livreto foi interrompido para preservar o encaixe."
+  manual_button.tooltip_text = manual_status
+  _reset_manual_release()
+  return
+ if manual_release_direction > 0 and manual_release_progress >= 1.0:
+  manual_release_direction = 0
+  _show_released_manual()
+ elif manual_release_direction < 0 and manual_release_progress <= 0.0:
+  manual_release_direction = 0
+  manual_release.restore()
+  manual_release = null
+  _restore_manual_zoom()
+  if visible and not manual_button.disabled: manual_button.grab_focus()
+
+func _show_released_manual() -> void:
+ manual_reader.set_reduced_motion(_reduced_motion())
+ manual_reader.bind_source_book(box.manual_book, _manual_origin_rect(), camera)
  if manual_reader.open_item(ITEMS[current_index]):
-  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+  viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
   manual_reader.move_to_front()
  else:
   manual_status = manual_reader.last_error
   manual_button.tooltip_text = manual_status
   manual_button.disabled = true
+  if is_instance_valid(manual_release):
+   manual_release_direction = -1
+   if _reduced_motion(): _advance_manual_release(0.0)
+
+func _reset_manual_release(refresh_view: bool = true) -> void:
+ manual_release_teardown = true
+ if is_instance_valid(manual_reader): manual_reader.finish_close()
+ manual_release_direction = 0
+ manual_release_progress = 0.0
+ manual_framing_active = false
+ if manual_saved_zoom > 0: zoom = manual_saved_zoom
+ manual_saved_zoom = -1.0
+ if is_instance_valid(manual_release): manual_release.restore()
+ manual_release = null
+ manual_release_teardown = false
+ if is_instance_valid(viewport) and visible:
+  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+  if refresh_view and is_inside_tree(): _frame_box()
+
+func _manual_origin_rect() -> Rect2:
+ if not is_instance_valid(box) or box.manual_book == null or not box.manual_book.configured: return Rect2()
+ var page_mesh: MeshInstance3D = box.manual_book.cover
+ if not is_instance_valid(page_mesh) or not is_instance_valid(camera): return Rect2()
+ var bounds := page_mesh.get_aabb()
+ var projected := Rect2()
+ var first := true
+ for corner in 8:
+  var point := page_mesh.global_transform * bounds.get_endpoint(corner)
+  if camera.is_position_behind(point): return Rect2()
+  var pixel_scale := viewport_container.size / Vector2(viewport.size).max(Vector2.ONE)
+  var screen := camera.unproject_position(point) * pixel_scale + viewport_container.global_position
+  if first: projected = Rect2(screen,Vector2.ZERO); first = false
+  else: projected = projected.expand(screen)
+ return projected
 
 func _manual_closed() -> void:
+ if manual_release_teardown: return
  cancel_drag()
+ if is_instance_valid(manual_release):
+  manual_release.begin_return()
+  manual_release_direction = -1
+  if _reduced_motion(): _advance_manual_release(0.0)
+ else:
+  _restore_manual_zoom()
  if is_instance_valid(viewport):
   viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if visible else SubViewport.UPDATE_DISABLED
  if visible and is_instance_valid(manual_button) and not manual_button.disabled: manual_button.grab_focus()

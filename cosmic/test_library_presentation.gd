@@ -63,6 +63,7 @@ func run() -> void:
  scene.cooldown = 0.0
  scene.enter_library()
  view = scene.library_view
+ view._select(0) # Explicit deterministic fixture choice after random startup.
  view.set_process(false)
  view.exit_requested.connect(func(): exits += 1)
  scene.reduced_motion = false

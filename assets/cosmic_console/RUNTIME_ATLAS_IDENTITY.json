@@ -1,0 +1,19 @@
+{
+  "source": "source_art/raster/master_system_atlas_4k.png",
+  "source_dimensions": [
+    4096,
+    4096
+  ],
+  "source_file_sha256": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c",
+  "runtime_input": "MasterSystem_Console_master_system_atlas_4k.png",
+  "runtime_dimensions": [
+    2048,
+    2048
+  ],
+  "legacy_filename_retained": true,
+  "runtime_rgba_sha256": "75e872aeec388a9f67a5276783303fec9f34d8452d61e4dd54754ffe2c1b03a0",
+  "reimported_rgba_sha256": "75e872aeec388a9f67a5276783303fec9f34d8452d61e4dd54754ffe2c1b03a0",
+  "decoded_pixel_identity": true,
+  "comparison": "Godot4.6.3 previously imported2048 texture versus fresh import of its lossless PNG export",
+  "source_unchanged": true
+}

@@ -96,7 +96,7 @@ func _clear(item: Dictionary) -> void:
  game_box = null
  console = null
  selected_item = item.duplicate(true)
- manual_available = false # No verified manual asset is presently supplied.
+ manual_available = false # Set only when a validated physical same-entry booklet is built.
  set_meta("manual_notice", MANUAL_NOTICE)
  set_meta("selected_game_id", str(item.get("id", "unavailable")))
 
@@ -152,6 +152,7 @@ func _populate(item: Dictionary) -> bool:
  if not item.is_empty():
   game_box = BoxScene.new()
   game_box.configure(item)
+  manual_available = game_box.manual_book != null and game_box.manual_book.configured
   add_child(game_box)
   game_box.set_lid_angle(90.0) # Native bounds/fallback pose; HOME perspective renderer owns the visible calibrated box.
   game_box.opened = true

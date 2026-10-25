@@ -12,7 +12,7 @@ Exemplo de estrutura:
 {"items":[{"id":"wonder_boy","title":"Wonder Boy","subtitle":"MASTER SYSTEM","cover_front":"wonder_boy_front.png","cover_spine":"wonder_boy_spine.png","cover_back":"wonder_boy_back.png"}]}
 ```
 
-Campos opcionais `cartridge_label` e `cartridge_top` associam separadamente a frente e o topo do cartucho. `wheel` conserva um logo local para futura apresentação; ainda não é exibido. O scanner aceita esses nomes explícitos em `gamelist.xml` e também `marquee` como wheel. Nenhuma capa é reutilizada automaticamente como label.
+Campos opcionais `cartridge_label` e `cartridge_top` associam separadamente a frente e o topo do cartucho. `wheel` exibe o logo local da própria entrada no lugar do título tipográfico, preservando proporção e transparência. Se faltar ou falhar a leitura, o título normal continua legível; não se reutiliza logo de outro jogo. O scanner aceita esses nomes explícitos em `gamelist.xml` e também `marquee` como wheel. Nenhuma capa é reutilizada automaticamente como label.
 
 Use imagens da mesma edição. Uma frente de uma edição não deve ser combinada silenciosamente com lombada/verso de outra. Faces ausentes não são reconstruídas como se fossem originais.
 
@@ -33,3 +33,15 @@ A documentação oficial da API v2 exige identificação própria do aplicativo 
 Documentação: https://www.screenscraper.fr/webapi2.php
 
 Nesta revisão, o fluxo online autenticado não foi validado. O uso de imagens locais e testes simulados não comprova acesso ao serviço. Arquivos ROM não são enviados; qualquer futura consulta deve limitar dados à identificação necessária do jogo, com configuração e autorização apropriadas.
+
+## Residência e qualidade em runtime
+
+O menu mantém no máximo três cards e cinco caixas 3D, independentemente da quantidade de metadados. Texturas locais usam cache por caminho/revisão e LOD: até 2048 pixels para a seleção e 512 para vizinhos. Arquivos fonte não são alterados. Cabeçalhos PNG/JPEG/WebP e dimensões são verificados antes da decodificação; o cache retém até 24 texturas e 192 MiB estimados. Esses limites não representam o total de memória do motor, materiais, decoder ou driver.
+
+O sorteio inicial considera entradas válidas do catálogo e permanece estável durante foco, layout, inspeção e retorno. Escolha explícita pelo usuário prevalece. Uma nova visita explicitamente iniciada evita repetir imediatamente o último ID quando há alternativas, dentro da mesma execução; não há promessa de histórico de sorteios entre reinicializações. Versões/arquivos distintos continuam entradas distintas, sem inferir que sejam o mesmo lançamento. Testes com mil metadados sintéticos não representam o inventário pessoal do usuário.
+
+### Inventário de metadados
+
+`cosmic/catalog_import.gd` adapta um JSON de inventário explicitamente fornecido, sem ler ROMs, diretórios ou mídia. O grupo padrão é Master System; Mark III é uma chamada separada. IDs internos derivam de sistema+caminho relativo, preservando variantes que compartilham um ID ScreenScraper. Registros ausentes permanecem consultáveis, mas não entram no sorteio. Sem raiz local configurada, associações de mídia permanecem somente metadados: não são tratadas como imagens presentes nesta máquina.
+
+A seleção inicial sorteia somente candidatos elegíveis e permanece estável durante foco, redesenho, inspeção e retorno. Uma nova visita explícita evita repetir imediatamente o último registro quando há alternativas. Não há promessa de uniformidade perceptível em poucas escolhas nem sincronização persistente entre execuções.

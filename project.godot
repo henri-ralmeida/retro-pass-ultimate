@@ -45,3 +45,6 @@ limits/opengl/max_renderable_lights=4
 [threading]
 
 worker_pool/max_threads=1
+
+[editor]
+import/use_multiple_threads=false

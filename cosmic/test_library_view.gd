@@ -83,10 +83,11 @@ func run() -> void:
  scene.cooldown = 0.0
  scene.confirm_selection("library_view_test")
  var view = scene.library_view
+ view._select(0) # Explicit deterministic fixture choice after random startup.
  view.exit_requested.connect(func(): exits += 1)
  check(view.visible and not view.inspect_mode,"Library opens in collection mode")
  check(view.current_index == 0 and view.item_title.text == "Wonder Boy","Manifest first item is selected")
- check("Acervo local" in view.disclosure.text and "sem jogos" in view.disclosure.text,"Always-visible disclosure identifies concept-only library")
+ check("Acervo local" in view.disclosure.text and "sem execução" in view.disclosure.text,"Always-visible disclosure identifies concept-only library")
  check(view.cards.size() == 2 and view.card_textures[1].texture == null,"Missing artwork stays blank rather than inventing a cover")
  check(view.box.get_parent() == view.pivot and view.model_bounds.size.z > 0.05,"True volumetric box parented to centered pivot")
  check(view.camera.projection == Camera3D.PROJECTION_PERSPECTIVE,"Carousel uses perspective projection")

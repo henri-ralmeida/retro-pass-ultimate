@@ -3,15 +3,19 @@ extends Node3D
 ## The sleeve uses separate front/back/spine textures. Front is +Z; spine is -X.
 ## configure() is safe before or after add_child(); each call replaces the model.
 
+const ManualBook = preload("res://cosmic/manual_book.gd")
+const ArtworkCache = preload("res://cosmic/library_artwork_cache.gd")
 const BOX_SIZE := Vector3(1.74, 2.44, 0.30)
 const CORNER_RADIUS := 0.025
 const SURFACE_OFFSET := 0.001
 const LID_OPEN_DEGREES := 115.0
 
 var item: Dictionary = {}
+var artwork_max_side := ArtworkCache.SELECTED_MAX_SIDE
 var item_id := "unavailable"
 var title := "Capa indisponível"
 var _built := false
+var manual_book: RefCounted
 var original_model: Node3D
 var lid: Node3D
 var cartridge: Node3D
@@ -24,7 +28,11 @@ func _ready() -> void:
 		configure(item)
 
 func configure(data: Dictionary) -> void:
+	if manual_book != null:
+		manual_book.clear()
+	manual_book = null
 	item = data.duplicate(true)
+	artwork_max_side = clampi(int(data.get("_runtime_art_max_side",ArtworkCache.SELECTED_MAX_SIDE)),64,ArtworkCache.SELECTED_MAX_SIDE)
 	item_id = str(data.get("id", "unavailable"))
 	title = str(data.get("title", "Capa indisponível"))
 	for child in get_children():
@@ -103,6 +111,7 @@ func _load_original(data: Dictionary) -> bool:
 	_align_original_hinge_to_spine(source_box)
 	scene.free()
 	_restore_original_art(data)
+	_attach_manual(data)
 	original_model.rotation.x = PI*0.5
 	var bounds := _mesh_bounds()
 	var factor := 2.44 / maxf(bounds.size.y, 0.001)
@@ -111,6 +120,22 @@ func _load_original(data: Dictionary) -> bool:
 	original_model.position -= bounds.get_center()
 	set_meta("original_room_geometry", true)
 	return true
+
+func _attach_manual(data: Dictionary) -> void:
+	# Same-entry pages only. Missing media never creates a substitute booklet.
+	var pages: Variant = data.get("manual_pages", [])
+	if not pages is Array or pages.is_empty() or pages.size() > ManualBook.MAX_PAGES: return
+	if not pages[0] is String or pages[0].get_extension().to_lower() not in ["png","jpg","jpeg"]: return
+	var first_page := FileAccess.open(pages[0],FileAccess.READ)
+	if first_page == null: return
+	var source_bytes := first_page.get_length()
+	first_page.close()
+	if source_bytes <= 0 or source_bytes > ManualBook.MAX_FILE_BYTES: return
+	if str(data.get("manual_item_id", data.get("manual_game_id", ""))) != item_id: return
+	var texture := load_artwork(pages[0], artwork_max_side)
+	if texture == null: return
+	var candidate := ManualBook.new()
+	if candidate.configure(self, data, texture): manual_book = candidate
 
 func _align_original_hinge_to_spine(source_box: Node3D) -> void:
 	# REV2's authored pivot is on the bottom of the case, 23 mm below the
@@ -204,12 +229,12 @@ func _restore_original_art(data: Dictionary) -> void:
 			if material is StandardMaterial3D and material.resource_name.begins_with("SLOT_"):
 				var copy: StandardMaterial3D = material.duplicate()
 				var path := str(data.get("art_root", "")).path_join(material.resource_name)
-				var texture := load_artwork(path + ".png") if not str(data.get("art_root", "")).is_empty() else null
-				if texture == null and not str(data.get("art_root", "")).is_empty(): texture = load_artwork(path + ".jpg")
+				var texture := load_artwork(path + ".png",artwork_max_side) if not str(data.get("art_root", "")).is_empty() else null
+				if texture == null and not str(data.get("art_root", "")).is_empty(): texture = load_artwork(path + ".jpg",artwork_max_side)
 				if not face.is_empty(): texture = _texture(data,face)
 				var cartridge_field: String = {"SLOT_CART_LABEL":"cartridge_label", "SLOT_CART_TOP":"cartridge_top"}.get(material.resource_name, "")
 				if not cartridge_field.is_empty() and not str(data.get(cartridge_field, "")).is_empty():
-					texture = load_artwork(str(data[cartridge_field]))
+					texture = load_artwork(str(data[cartridge_field]),artwork_max_side)
 				copy.albedo_texture = texture
 				copy.albedo_color = Color.WHITE if texture else Color("27313d")
 				mesh.set_surface_override_material(surface, copy)
@@ -261,23 +286,16 @@ func get_local_bounds() -> AABB:
 	var extent := BOX_SIZE * 0.5 + Vector3.ONE * 0.004
 	return AABB(-extent, extent * 2.0)
 
-static func load_artwork(supplied: Variant) -> Texture2D:
-	if supplied is Texture2D:
-		return supplied as Texture2D
-	if not supplied is String or str(supplied).is_empty():
-		return null
-	var path := str(supplied)
-	# Runtime decoding also works without Godot import caches for local/private art.
-	if FileAccess.file_exists(path):
-		var image := Image.new()
-		if image.load(ProjectSettings.globalize_path(path)) == OK:
-			image.generate_mipmaps()
-			return ImageTexture.create_from_image(image)
-	return null
+static func load_artwork(supplied: Variant, maximum_side: int = ArtworkCache.SELECTED_MAX_SIDE) -> Texture2D:
+	# Explicit caller-owned textures are already loaded outside this cache's
+	# ownership/accounting. Catalog path images use bounded shared runtime LODs.
+	if supplied is Texture2D: return supplied as Texture2D
+	if not supplied is String or str(supplied).is_empty(): return null
+	return ArtworkCache.shared().load_path(str(supplied),maximum_side)
 
 func _texture(data: Dictionary, face: String) -> Texture2D:
 	# Never substitute invented artwork, another game, or the front for a missing back.
-	return load_artwork(data.get("cover_" + face, null))
+	return load_artwork(data.get("cover_" + face, null),artwork_max_side)
 
 func _face(node_name: String, dimensions: Vector2, location: Vector3, angles: Vector3, artwork: Texture2D) -> void:
 	var panel := MeshInstance3D.new()
