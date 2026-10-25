@@ -5,6 +5,19 @@ signal closed
 const OptinPanel = preload("res://cosmic/media_optin_panel.gd")
 const Store = preload("res://cosmic/media_optin_store.gd")
 var store := Store.new()
+var binding_store := preload("res://cosmic/media_binding_store.gd").new()
+var tour_store := preload("res://cosmic/media_tour_store.gd").new()
+var restore_service := preload("res://cosmic/media_restore_service.gd").new()
+var restore_enabled := false
+var automatic_tour := false
+var can_offer_tour: Callable
+var offer_tour: Callable
+var _restore_checked := false
+var _restore_running := false
+var _restoring := false
+var _tour_checked := false
+var _tour_active := false
+var _stable_elapsed := 0.0
 var panel
 var overlay: ColorRect
 var frame: PanelContainer
@@ -23,6 +36,10 @@ var _read_omissions := 0
 var _status := "Opcional · sem download"
 
 func _ready() -> void:
+ # Test/custom profiles keep every private file in the same isolated namespace.
+ if store.path != "user://retropass_local_media_settings.json":
+  binding_store.path = store.path + ".bindings"
+  tour_store.path = store.path + ".tour"
  set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
  mouse_filter = Control.MOUSE_FILTER_IGNORE
  overlay = ColorRect.new()
@@ -45,6 +62,7 @@ func _ready() -> void:
  frame.add_child(column)
  close_button = Button.new()
  preload("res://cosmic/ui_icons.gd").iconify(close_button,"back","Voltar à navegação")
+ close_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
  close_button.pressed.connect(close_panel)
  column.add_child(close_button)
  var scroll := ScrollContainer.new()
@@ -55,6 +73,10 @@ func _ready() -> void:
  panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
  scroll.add_child(panel)
  panel.before_start = _before_start
+ panel.cancel_button.pressed.connect(func():
+  if _restore_running:
+   restore_service.request_cancel()
+   _status = "Restauração cancelada · nenhum vínculo aplicado")
  panel.confirm_dialog.profile = profile
  panel.system_picker.get_popup().set_script(preload("res://cosmic/media_system_popup.gd"))
  panel.system_picker.get_popup().profile = profile
@@ -62,7 +84,7 @@ func _ready() -> void:
  panel.processing_finished.connect(_finished)
  summary = Label.new()
  summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
- summary.text = "Só mídias explicitamente relacionadas no inventário. Originais preservados.\nPDF não vira páginas; screenshot não vira capa. Associação vale nesta sessão."
+ summary.text = "Só mídias explicitamente relacionadas no inventário. Originais preservados.\nPDF não vira páginas; screenshot não vira capa. Vínculos aprovados são preservados e revalidados ao reiniciar. Imagens genéricas não viram capas."
  column.add_child(summary)
  _private_state = store.load_state()
  panel.offer_resume(_private_state.get("plan",{}))
@@ -81,7 +103,10 @@ func is_open() -> bool:
 
 func open_panel() -> void:
  if is_open(): return
- if not panel.service.is_busy() and _pending_association.is_empty():
+ if not _tour_checked and tour_store.state() == "unseen":
+  _tour_checked = true
+  _tour_active = tour_store.save_tour("in_progress") == OK
+ if not _restore_running and not panel.service.is_busy() and _pending_association.is_empty():
   panel.set_inventory(catalog_getter.call() if catalog_getter.is_valid() else [])
   panel.offer_resume(_private_state.get("plan",{}))
  overlay.show()
@@ -94,10 +119,19 @@ func open_panel() -> void:
 func close_panel() -> void:
  if not is_open(): return
  panel._invalidate_confirmation()
+ if _tour_active:
+  if tour_store.save_tour("later") != OK:
+   _status = "Fechado · decisão ‘depois’ não foi salva"
+   panel.status_label.text = _status
+  _tour_active = false
  overlay.hide()
  closed.emit()
 
 func _before_start(plan: Dictionary) -> Error:
+ if _restore_running or not _pending_association.is_empty(): return ERR_BUSY
+ var tour_error: int = tour_store.save_tour("configured")
+ if tour_error != OK: return tour_error
+ _tour_active = false
  _snapshot = panel.inventory_items.duplicate(true)
  var error: int = store.save_plan(plan)
  if error == OK:
@@ -106,7 +140,9 @@ func _before_start(plan: Dictionary) -> Error:
  return error
 
 func _dismissed(decision: Dictionary) -> void:
- var error: int = store.save_decision(decision)
+ var error: int = tour_store.save_tour(str(decision.get("decision", "later")))
+ if error == OK: error = store.save_decision(decision)
+ if error == OK: _tour_active = false
  if error != OK:
   panel.show()
   panel.status_label.text = "Não foi possível salvar a decisão privada: %s" % error
@@ -125,6 +161,12 @@ func _finished(_result: Dictionary) -> void:
 
 func _process(_delta: float) -> void:
  if not is_instance_valid(panel): return
+ _startup(_delta)
+ if _restore_running and not restore_service.is_busy():
+  _pending_association = restore_service.take_result()
+  _restore_running = false
+  _restoring = not _pending_association.is_empty()
+  panel._set_busy(false)
  close_button.tooltip_text = "Voltar à navegação · processo continua" if panel.service.is_busy() else "Voltar à navegação"
  close_button.accessibility_name = close_button.tooltip_text
  var progress_caption := "Mídia local"
@@ -137,14 +179,22 @@ func _process(_delta: float) -> void:
   if current != _snapshot:
    _status = "Catálogo mudou · nada aplicado; revise novamente"
   else:
-   var count: int = catalog_apply.call(_pending_association) if catalog_apply.is_valid() else 0
+   var save_error := OK if _restoring else binding_store.save_bindings(_pending_association.get("bindings", []), _pending_association.get("remove_bindings", []))
+   var count := 0
+   if save_error == OK and catalog_apply.is_valid(): count = int(catalog_apply.call(_pending_association))
+   if save_error != OK:
+    _status = "Não salvo · nada aplicado (%s)" % save_error
+    summary.text = _status
+    _pending_association = {}
+    _restoring = false
+    return
    # Our own provenance updates are not an external catalog change. Refresh the
    # next consent snapshot without changing the approved saved plan.
    if catalog_getter.is_valid(): panel.inventory_items = catalog_getter.call().duplicate(true)
    _status = "%d vínculos aplicados · %d erros de arquivo · %d omissões · %d não aplicados" % [count,_read_errors,_read_omissions,_pending_association.get("issues",[]).size()]
-  summary.text = _status + "\nCatálogo desta sessão; exibição na próxima entrada.
-Retomar exige confirmação e validação atuais."
+  summary.text = _status + "\nVínculos privados preservados; revalidação de bytes a cada reinício.\nImagens genéricas não são exibidas como capas; PDF não convertido."
   _pending_association = {}
+  _restoring = false
  if is_instance_valid(launcher):
   launcher.tooltip_text = "Mídia local · " + _status
   var label := launcher.find_child("ActionLabel",true,false)
@@ -175,5 +225,37 @@ func route_input(event: InputEvent) -> bool:
   return true
  return event is InputEventJoypadButton or event is InputEventJoypadMotion
 
+func _startup(delta: float) -> void:
+ var stable := not can_apply.is_valid() or bool(can_apply.call())
+ if not stable:
+  _stable_elapsed = 0.0
+  return
+ if restore_enabled and not _restore_checked and not panel.service.is_busy() and _pending_association.is_empty():
+  _restore_checked = true
+  var bindings: Array = binding_store.load_state().get("bindings", [])
+  if not bindings.is_empty():
+   _snapshot = catalog_getter.call().duplicate(true) if catalog_getter.is_valid() else []
+   if restore_service.begin(bindings, _snapshot) == OK:
+    _restore_running = true
+    panel._set_busy(true)
+    _status = "Revalidando vínculos privados · sem nova busca"
+ if _restore_running or panel.service.is_busy() or not _pending_association.is_empty(): return
+ if not automatic_tour or _tour_checked: return
+ if tour_store.state() != "unseen" or not _private_state.is_empty():
+  _tour_checked = true
+  return
+ if is_open() or (can_offer_tour.is_valid() and not can_offer_tour.call()):
+  _stable_elapsed = 0.0
+  return
+ _stable_elapsed += delta
+ if _stable_elapsed < 0.75: return
+ _tour_checked = true
+ # Persist before showing, so crash/interruption cannot create a prompt loop.
+ if tour_store.save_tour("in_progress") != OK: return
+ _tour_active = true
+ if offer_tour.is_valid(): offer_tour.call()
+ else: open_panel()
+
 func _exit_tree() -> void:
+ restore_service.shutdown()
  if is_instance_valid(panel): panel.service.shutdown()

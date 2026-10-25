@@ -1647,6 +1647,10 @@ func _build_local_media_host() -> void:
  media_host.catalog_getter = _local_media_inventory
  media_host.catalog_apply = _apply_local_media
  media_host.can_apply = func(): return not transition_busy
+ media_host.restore_enabled = true
+ media_host.automatic_tour = OS.get_environment("RETROPASS_DISABLE_AUTOMATIC_TOUR") != "1"
+ media_host.can_offer_tour = func(): return scene_active and application_focused and library_state == "system" and not transition_busy and not _controller_blocks_background() and not settings_panel.visible and not history_open and not inspect_mode and not controller_click_active
+ media_host.offer_tour = _open_local_media
  media_host.launcher = media_button
  var local_theme := Theme.new()
  local_theme.default_font = chakra
@@ -1677,7 +1681,7 @@ func _local_media_inventory() -> Array:
  return items
 
 func _apply_local_media(result: Dictionary) -> int:
- # Apply to this session only; original catalog file and source media untouched.
+ # Apply the validated private overlay; original catalog and source media untouched.
  # Only metadata is changed here; visible meshes/textures refresh on normal navigation.
  # Current decode/hash + identity checks completed on the worker.
  var updated: Array = result.get("items",[])
@@ -1688,9 +1692,11 @@ func _apply_local_media(result: Dictionary) -> int:
   for i in view.ITEMS.size():
    var old: Dictionary = view.ITEMS[i]
    for item in updated:
-    if item.get("id","") == old.get("id","") and item.get("system","") == old.get("system",""):
+    if item.get("id","") == old.get("id","") and preload("res://cosmic/media_result_association.gd").canonical_system(item) == preload("res://cosmic/media_result_association.gd").canonical_system(old):
      for field in ["cover_front","cover_back","cover_spine","cover_edge","cartridge_label","cartridge_top","wheel"]:
-      if item.get(field,"") != old.get(field,""): cache.invalidate(str(item.get(field,"")))
+      if item.get(field,"") != old.get(field,""):
+       cache.invalidate(str(old.get(field,"")))
+       cache.invalidate(str(item.get(field,"")))
      if view == sms_library_view and (item != old or not result.get("changed_paths",[]).is_empty()): view.local_media_refresh_pending = true
      view.ITEMS[i] = item.duplicate(true)
      break

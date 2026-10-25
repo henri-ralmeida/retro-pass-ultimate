@@ -39,7 +39,7 @@ func run() -> void:
  var items: Array = [item, {"id":"exact-variant-us", "system":"master_system", "cover_front":"keep-us", "region_hint":"US"}]
  var result := processed(items, folder)
  var associated := Association.build(result, items)
- check(associated.applied == 2 and associated.validated_files == 1, "Actual front and wheel validated, shared file decoded once")
+ check(associated.applied == 3 and associated.validated_files == 2, "Front, wheel and generic image validated; shared file decoded once")
  check(associated.items[0].cover_front == folder.path_join("front.png"), "Exact front path applied")
  check(associated.items[0].wheel == folder.path_join("front.png"), "Explicit wheel applies")
  check(associated.items[0].local_media_previous.cover_front == "old-front", "Prior surface retained")
@@ -47,7 +47,7 @@ func run() -> void:
  check(associated.items[0].manual_pages == ["old-page"], "PDF never replaces pages")
  check(associated.items[1].cover_front == "keep-us", "Other variant untouched")
  check(items[0].cover_front == "old-front" and not items[0].has("local_media_previous"), "Input catalog unchanged")
- check(associated.issues.any(func(v): return v.get("tag") == "image"), "Generic image is not art fallback")
+ check(associated.items[0].media_image == folder.path_join("other.png") and associated.items[0].cover_front != folder.path_join("other.png"), "Generic image is not art fallback")
  var changed := items.duplicate(true)
  changed[0].region_hint = "BR"
  check(Association.build(result, changed).applied == 0, "Changed region under same ID rejected")
@@ -63,18 +63,18 @@ func run() -> void:
  check(Association.build(missing_signature, items).applied == 0, "Legacy links without identity snapshot rejected")
  png.fill(Color.RED)
  png.save_png(folder.path_join("front.png"))
- check(Association.build(result, items).applied == 0, "Current file replacement rejects stale hash")
+ check(Association.build(result, items).applied == 1, "Current file replacement rejects stale hash")
  var invalid := item.duplicate(true)
  invalid.media_metadata.cover_front.relative_path = "fake.png"
  invalid.media_metadata.wheel.relative_path = "fake.png"
  var invalid_result := processed([invalid], folder)
- check(Association.build(invalid_result, [invalid]).applied == 0, "Hashed non-image never applied")
+ check(Association.build(invalid_result, [invalid]).applied == 1, "Hashed non-image never applied")
  var cancelled := Association.build(processed(items, folder), items, func(): return true)
  check(cancelled.status == "cancelled" and cancelled.applied == 0 and cancelled.items[0].cover_front == "old-front", "Cancel preserves whole prior catalog")
  var ambiguous := item.duplicate(true)
  ambiguous.media_metadata.boxart = {"status":"present", "relative_path":"other.png"}
  var ambiguous_result := Association.build(processed([ambiguous], folder), [ambiguous])
- check(ambiguous_result.items[0].cover_front == "old-front" and ambiguous_result.applied == 1, "Conflicting aliases rejected without blocking exact wheel")
+ check(ambiguous_result.items[0].cover_front == "old-front" and ambiguous_result.applied == 2, "Conflicting aliases rejected without blocking exact wheel")
  var huge := png.save_png_to_buffer()
  huge[16] = 0x7f
  huge[17] = 0xff

@@ -2,6 +2,7 @@ extends PanelContainer
 ## Opt-in local processing; host owns lifecycle and private persistence.
 signal dismissed(decision: Dictionary)
 signal processing_finished(summary: Dictionary)
+const Icons = preload("res://cosmic/ui_icons.gd")
 const Config = preload("res://cosmic/media_optin_config.gd")
 const Planner = preload("res://cosmic/media_optin_plan.gd")
 const Service = preload("res://cosmic/media_processing_service.gd")
@@ -27,29 +28,53 @@ var _resume := false
 var _was_running := false
 
 func _ready() -> void:
+ add_theme_stylebox_override("panel", StyleBoxEmpty.new())
  var column := VBoxContainer.new()
  add_child(column)
  var heading := Label.new()
  heading.text = "Mídia local — configuração opcional"
  column.add_child(heading)
  var explanation := Label.new()
- explanation.text = "Escolha sistema, raiz e categorias. Arquivos de mídia só serão processados após sua confirmação.\nSomente referências exatas do inventário; edição não verificada."
+ explanation.text = "Configuração opcional: sistema, raiz e categorias.\nSó lê mídias após confirmar o plano atual. Sem download.\nPule, configure depois ou reabra pelo ícone. Edição não verificada."
  explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  column.add_child(explanation)
  system_picker = OptionButton.new()
  for system in Config.SYSTEMS: system_picker.add_item({"master_system":"Master System","mark_iii":"Mark III","atari_2600":"Atari 2600"}.get(system,system))
  system_picker.selected = -1
+ system_picker.text = "Escolha um sistema"
+ system_picker.accessibility_name = "Sistema das mídias locais"
+ system_picker.tooltip_text = "Escolha o sistema exato do inventário"
+ Icons.decorate(system_picker)
+ system_picker.get_popup().add_theme_stylebox_override("panel", Icons.style(Color("101e35"),Color("58c5da")))
+ system_picker.get_popup().add_theme_stylebox_override("hover", Icons.style(Color("244965"),Color("b4e6ff")))
+ system_picker.get_popup().add_theme_color_override("font_color",Color("dce9fc"))
+ system_picker.get_popup().add_theme_color_override("font_hover_color",Color("ffffff"))
  column.add_child(system_picker)
  system_picker.item_selected.connect(func(_index: int): _invalidate_confirmation())
  root_input = LineEdit.new()
  root_input.placeholder_text = "Raiz local absoluta (digite ou cole; não varre pastas)"
  root_input.accessibility_name = "Raiz local das mídias"
+ root_input.add_theme_stylebox_override("normal", Icons.style(Color("0a1424")))
+ root_input.add_theme_stylebox_override("focus", Icons.style(Color("102039"), Color("b4e6ff")))
+ root_input.add_theme_color_override("font_placeholder_color", Color("9db1c9"))
+ root_input.add_theme_color_override("font_color", Color("dce9fc"))
  column.add_child(root_input)
  root_input.text_changed.connect(func(_text: String): _invalidate_confirmation())
  var labels := {"covers":"Capas e labels explícitos", "images":"Imagens (não usadas como capas)", "wheel":"Wheel / logo", "manual":"Manuais locais (sem conversão PDF)"}
  for category in Config.CATEGORIES:
   var checkbox := CheckBox.new()
   checkbox.text = labels[category]
+  checkbox.accessibility_name = labels[category]
+  checkbox.add_theme_icon_override("checked", Icons.checkbox_texture(true))
+  checkbox.add_theme_icon_override("unchecked", Icons.checkbox_texture(false))
+  checkbox.add_theme_icon_override("checked_disabled", Icons.checkbox_texture(true))
+  checkbox.add_theme_icon_override("unchecked_disabled", Icons.checkbox_texture(false))
+  checkbox.add_theme_color_override("font_color", Color("dce9fc"))
+  checkbox.add_theme_color_override("font_focus_color", Color("eaf6ff"))
+  checkbox.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+  checkbox.add_theme_stylebox_override("hover", Icons.style(Color("182d46"),Color("76b8e5")))
+  checkbox.add_theme_stylebox_override("focus", Icons.style(Color(0,0,0,0),Color("b4e6ff")))
+  checkbox.custom_minimum_size.y = 30
   categories[category] = checkbox
   column.add_child(checkbox)
   checkbox.toggled.connect(func(_pressed: bool): _invalidate_confirmation())
@@ -150,7 +175,7 @@ func offer_resume(plan: Dictionary) -> void:
 
 func _show_review() -> void:
  confirm_dialog.arm_opening_event(last_input_event)
- confirm_dialog.dialog_text = "Processamento local: %d arquivos para %d jogos.\n%d associações indisponíveis ou não suportadas.\nSistema: %s\nRaiz: %s\nCategorias: %s\nLer novamente e calcular hash atual de todos estes arquivos (inclusive os concluídos anteriormente)? Validar imagens suportadas e associar referências exatas ao catálogo desta sessão. Não altera originais nem confirma edição. PDFs não serão convertidos." % [
+ confirm_dialog.dialog_text = "Processamento local: %d arquivos para %d jogos.\n%d associações indisponíveis ou não suportadas.\nSistema: %s\nRaiz: %s\nCategorias: %s\nLer novamente e calcular hash atual de todos estes arquivos (inclusive os concluídos anteriormente)? Validar imagens suportadas e associar referências exatas ao catálogo e preservar estes vínculos privados para revalidar os mesmos arquivos ao reiniciar. Não altera originais nem confirma edição. PDFs não serão convertidos." % [
   _pending_plan.files_total, _pending_plan.games_total, _pending_plan.issues.size(),
   _pending_plan.config.system, _pending_plan.config.root, ", ".join(_pending_plan.config.categories)]
  confirm_dialog.popup_centered_clamped(Vector2i(640, 380),0.90)
