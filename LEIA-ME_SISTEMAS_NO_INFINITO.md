@@ -82,3 +82,10 @@ A solução não depende de cache, alteração de compressão ou faixa especial 
 As inscrições foram reconstruídas em SVG, com atlas e wordmark em alta resolução, sem pixels da fotografia de loja ou do logo fotográfico anterior. Os fontes 4K ficam em `assets/cosmic_console/source_art/raster/`; o atlas de runtime é limitado a 2K sem perdas pelo importador, preservando mipmaps e filtro anisotrópico. Preserve os arquivos `.import` para reproduzir essa configuração. O wordmark usa aproximação tipográfica documentada; a marca SEGA e o logo de sistema têm atribuições próprias. Veja `source_art/ATTRIBUTION.txt` e os manifests de auditoria.
 
 O zoom permanece útil entre 0,65 e 1,35, com enquadramento adaptativo ao ângulo. A grade de testes inclui mais de cinco mil estados e três proporções. Não há promessa de nitidez infinita nem certificação em todas as GPUs. Perder foco preserva o objeto visível, orientação e zoom; arraste e contador são cancelados. A história pausada retoma da posição onde parou.
+
+
+### Controles contextuais
+
+A apresentação usa rodapé contextual sem subtítulo e instruções longas permanentes. Teclado: X confirma, Z volta, I inspeciona, M pausa/retoma, R restaura inspeção e F1 abre Controles. Setas e +/− continuam repetíveis durante inspeção; confirmação mantida não repete.
+
+Ações e família de símbolos são configuráveis em `user://controls.cfg`. Xbox usa X para inspecionar; PlayStation usa quadrado, na mesma posição física oeste. Identidades ambíguas como XInput/Steam Input são genéricas até escolha manual. Os testes de gamepad são sintéticos, não validação com controle físico.

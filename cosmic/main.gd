@@ -1,4 +1,6 @@
 extends Node
+const InputProfile = preload("res://cosmic/input_profile.gd")
+const InputGlyph = preload("res://cosmic/input_glyph.gd")
 ## Independent presentation prototype. No ROM, media, achievement or library operations.
 signal system_selected(system_id: String)
 @export var systems: Array[Resource] = [preload("res://cosmic/master_system.tres")]
@@ -47,7 +49,20 @@ var title: Label
 var eyebrow: Label
 var hint: Label
 var status: Label
-var footer: HBoxContainer
+var footer: HFlowContainer
+var input_profile = InputProfile.new()
+var input_device := "keyboard"
+var active_pad := -1
+var active_pad_name := ""
+var confirm_button: Button
+var back_button: Button
+var settings_button: Button
+var settings_panel: PanelContainer
+var family_selector: OptionButton
+var mapping_buttons: Dictionary = {}
+var capture_action := ""
+var settings_message: Label
+var axis_navigation_held := false
 var header: Label
 var fill_light: DirectionalLight3D
 var orbitron: Font = preload("res://assets/fonts/Orbitron.ttf")
@@ -57,10 +72,15 @@ var last_input_source := ""
 var model_bounds := AABB()
 
 func _ready() -> void:
+ input_profile.load_settings()
  get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
  _build_background()
  _build_3d()
  _build_ui()
+ Input.joy_connection_changed.connect(_joy_connection_changed)
+ var pads := Input.get_connected_joypads()
+ if not pads.is_empty(): _set_input_device("gamepad",pads[0],Input.get_joy_name(pads[0]))
+ _refresh_controls()
  get_viewport().size_changed.connect(_layout)
  get_window().focus_exited.connect(_focus_lost)
  get_window().focus_entered.connect(_focus_returned)
@@ -74,6 +94,221 @@ func _ready() -> void:
  if "--capture-motion" in OS.get_cmdline_user_args(): _capture_motion.call_deferred()
  if "--runtime-metrics" in OS.get_cmdline_user_args(): _runtime_metrics.call_deferred()
  if "--capture-offline" in OS.get_cmdline_user_args(): _capture_offline.call_deferred()
+
+func _set_input_device(kind: String, device: int = -1, device_name: String = "") -> void:
+ if input_device == kind and active_pad == device and active_pad_name == device_name: return
+ input_device = kind
+ active_pad = device
+ active_pad_name = device_name
+ axis_navigation_held = false
+ reset_dwell()
+ if is_instance_valid(footer): _refresh_controls()
+
+func _joy_connection_changed(device: int, connected: bool) -> void:
+ if connected and active_pad < 0:
+  _set_input_device("gamepad",device,Input.get_joy_name(device))
+ elif not connected and device == active_pad:
+  inspection_dragging = false
+  var remaining := Input.get_connected_joypads()
+  remaining.erase(device)
+  if remaining.is_empty(): _set_input_device("keyboard")
+  else: _set_input_device("gamepad",remaining[0],Input.get_joy_name(remaining[0]))
+
+func _observe_input_device(event: InputEvent) -> void:
+ if event is InputEventKey and event.pressed:
+  _set_input_device("keyboard")
+ elif event is InputEventMouseButton and event.pressed:
+  _set_input_device("keyboard")
+ elif event is InputEventMouseMotion and event.relative.length() > 2.0:
+  _set_input_device("keyboard")
+ elif (event is InputEventJoypadButton and event.pressed) or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.3):
+  _set_input_device("gamepad",event.device,Input.get_joy_name(event.device))
+
+func _refresh_controls() -> void:
+ if not is_instance_valid(footer): return
+ var gamepad := input_device == "gamepad"
+ var family: String = input_profile.family(active_pad_name) if gamepad else "keyboard"
+ confirm_button.visible = not inspect_mode and not history_open
+ back_button.visible = inspect_mode or history_open
+ reset_button.visible = inspect_mode
+ _set_action_label(inspect_button,"Voltar" if inspect_mode else "Inspecionar")
+ _set_action_label(motion_button,"Animar" if reduced_motion else "Pausar")
+ var controls: Array[Control] = []
+ if not inspect_mode and not history_open: controls.append(console_button)
+ for button in footer.get_children():
+  var action: String = button.get_meta("action","")
+  var glyph = button.find_child("InputGlyph",true,false)
+  if action == "settings":
+   glyph.symbol = "F1"
+   glyph.family = "keyboard"
+  else:
+   glyph.symbol = input_profile.glyph(action,gamepad,active_pad_name)
+   glyph.family = family
+   button.tooltip_text = button.accessibility_name
+  if button.visible: controls.append(button)
+ for index in controls.size():
+  var previous: NodePath = controls[posmod(index-1,controls.size())].get_path()
+  var following: NodePath = controls[(index+1)%controls.size()].get_path()
+  controls[index].focus_previous = previous
+  controls[index].focus_next = following
+  controls[index].focus_neighbor_left = previous
+  controls[index].focus_neighbor_right = following
+ if settings_panel:
+  footer.mouse_filter = Control.MOUSE_FILTER_IGNORE if settings_panel.visible else Control.MOUSE_FILTER_PASS
+ if is_instance_valid(settings_message): _refresh_mapping_labels()
+
+func go_back() -> void:
+ if settings_panel.visible: toggle_control_settings()
+ elif inspect_mode: close_inspection()
+ elif history_open: close_history()
+
+func _build_control_settings() -> void:
+ settings_panel = PanelContainer.new()
+ settings_panel.name = "ControlSettings"
+ settings_panel.visible = false
+ var style := StyleBoxFlat.new()
+ style.bg_color = Color("11182b")
+ style.border_color = Color("465777")
+ style.set_border_width_all(1)
+ style.set_corner_radius_all(10)
+ style.content_margin_left = 18
+ style.content_margin_right = 18
+ style.content_margin_top = 16
+ style.content_margin_bottom = 16
+ settings_panel.add_theme_stylebox_override("panel",style)
+ ui.add_child(settings_panel)
+ var scroll := ScrollContainer.new()
+ scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+ settings_panel.add_child(scroll)
+ var column := VBoxContainer.new()
+ column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+ column.add_theme_constant_override("separation",10)
+ scroll.add_child(column)
+ column.add_child(_label("Controles",orbitron,20,Color("eef3ff")))
+ family_selector = OptionButton.new()
+ family_selector.accessibility_name = "Símbolos do controle"
+ family_selector.get_popup().window_input.connect(_family_popup_input)
+ for item in ["Automático", "Xbox", "PlayStation", "Genérico"]: family_selector.add_item(item)
+ family_selector.select(["auto","xbox","playstation","generic"].find(input_profile.family_override))
+ family_selector.item_selected.connect(func(index: int):
+  input_profile.family_override = ["auto","xbox","playstation","generic"][index]
+  _save_control_settings()
+  _refresh_controls())
+ column.add_child(family_selector)
+ settings_message = _label("Selecione uma ação para remapear",chakra,15,Color("a8b9d3"))
+ settings_message.custom_minimum_size.y = 34
+ settings_message.clip_text = true
+ column.add_child(settings_message)
+ for action in InputProfile.ACTIONS:
+  var button := Button.new()
+  button.custom_minimum_size.y = 38
+  button.pressed.connect(_begin_rebind.bind(action))
+  mapping_buttons[action] = button
+  column.add_child(button)
+ var defaults := Button.new()
+ defaults.text = "Restaurar controles padrão"
+ defaults.custom_minimum_size.y = 38
+ defaults.pressed.connect(_restore_control_defaults)
+ column.add_child(defaults)
+ var close := Button.new()
+ close.text = "Voltar"
+ close.custom_minimum_size.y = 38
+ close.pressed.connect(toggle_control_settings)
+ column.add_child(close)
+
+func _restore_control_defaults() -> void:
+ input_profile.keys = InputProfile.KEYS.duplicate()
+ input_profile.buttons = InputProfile.BUTTONS.duplicate()
+ input_profile.family_override = "auto"
+ family_selector.select(0)
+ capture_action = ""
+ settings_message.text = "Controles padrão restaurados"
+ _save_control_settings()
+ _refresh_controls()
+
+func _family_popup_input(event: InputEvent) -> void:
+ var popup := family_selector.get_popup()
+ if not popup.visible: return
+ if not scene_active or (not application_focused and not popup.has_focus()):
+  popup.set_input_as_handled()
+  return
+ _observe_input_device(event)
+ var action: String = input_profile.action_for(event)
+ if action == "back":
+  popup.hide()
+  popup.set_input_as_handled()
+ elif action == "confirm":
+  var index := popup.get_focused_item()
+  if index < 0: index = family_selector.selected
+  popup.index_pressed.emit(index)
+  popup.hide()
+  popup.set_input_as_handled()
+
+func _refresh_mapping_labels() -> void:
+ var names := {"confirm":"Confirmar","back":"Voltar","inspect":"Inspecionar","motion":"Movimento","reset":"Restaurar"}
+ for action in mapping_buttons:
+  var keyboard: String = input_profile.glyph(action,false)
+  var pad := "Botão %d" % (int(input_profile.buttons[action])+1)
+  mapping_buttons[action].text = "%s  ·  Teclado %s  /  %s" % [names[action],keyboard,pad]
+  mapping_buttons[action].accessibility_name = mapping_buttons[action].text
+ family_selector.tooltip_text = active_pad_name if not active_pad_name.is_empty() else "Sem controle identificado; escolha manual disponível"
+
+func toggle_control_settings() -> void:
+ if not scene_active or not application_focused: return
+ settings_panel.visible = not settings_panel.visible
+ capture_action = ""
+ inspection_dragging = false
+ reset_dwell()
+ settings_message.text = "Selecione uma ação para remapear"
+ # Modal settings cannot activate the console or footer behind them.
+ console_button.disabled = settings_panel.visible
+ for button in footer.get_children(): button.disabled = settings_panel.visible
+ if settings_panel.visible: family_selector.grab_focus()
+ elif inspect_mode or history_open: inspect_button.grab_focus()
+ else: console_button.grab_focus()
+ _refresh_controls()
+
+func _begin_rebind(action: String) -> void:
+ capture_action = action
+ settings_message.text = "Pressione tecla ou botão · Esc cancela"
+
+func _save_control_settings() -> void:
+ if input_profile.save_settings() != OK:
+  settings_message.text = "Não foi possível salvar os controles"
+
+func _settings_input(event: InputEvent) -> bool:
+ if not settings_panel.visible: return false
+ if event is InputEventKey and event.pressed and event.echo: return true
+ if event is InputEventKey and event.pressed and (event.keycode == KEY_ESCAPE or event.keycode == KEY_F1):
+  if capture_action.is_empty(): toggle_control_settings()
+  else:
+   capture_action = ""
+   settings_message.text = "Remapeamento cancelado"
+  return true
+ if not capture_action.is_empty():
+  var code := -1
+  var gamepad := event is InputEventJoypadButton
+  if event is InputEventKey and event.pressed and not event.echo:
+   code = event.physical_keycode if event.physical_keycode else event.keycode
+  elif gamepad and event.pressed: code = event.button_index
+  if code >= 0:
+   input_profile.rebind(capture_action,code,gamepad)
+   capture_action = ""
+   settings_message.text = "Controles atualizados"
+   _save_control_settings()
+   _refresh_controls()
+  return true
+ if input_profile.action_for(event) == "back":
+  toggle_control_settings()
+  return true
+ return false
+
+func _activate_focused_control() -> void:
+ var focused := get_viewport().gui_get_focus_owner()
+ if focused == console_button: confirm_selection("keyboard" if input_device=="keyboard" else "gamepad_mapping")
+ elif focused is OptionButton: focused.show_popup()
+ elif focused is Button and focused.is_visible_in_tree() and not focused.disabled:
+  focused.pressed.emit()
 
 func _build_background() -> void:
  var canvas := CanvasLayer.new()
@@ -140,7 +375,8 @@ func _label(text_value: String, font: Font, px: int, color: Color) -> Label:
 
 func _action_button(key: String, label_text: String, tip: String, callback: Callable) -> Button:
  var b := Button.new()
- b.custom_minimum_size = Vector2(240,48)
+ b.custom_minimum_size = Vector2(144,48)
+ b.set_meta("action",key)
  b.tooltip_text = tip
  b.accessibility_name = label_text
  b.accessibility_description = tip
@@ -153,19 +389,10 @@ func _action_button(key: String, label_text: String, tip: String, callback: Call
  row.alignment = BoxContainer.ALIGNMENT_CENTER
  row.add_theme_constant_override("separation",12)
  b.add_child(row)
- var badge := PanelContainer.new()
- badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
- badge.custom_minimum_size = Vector2(32,32)
- badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
- var surface := StyleBoxFlat.new()
- surface.bg_color = Color("cbd0dd")
- surface.set_corner_radius_all(16)
- badge.add_theme_stylebox_override("panel",surface)
- row.add_child(badge)
- var letter := _label(key,chakra,17,Color("182030"))
- letter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
- letter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
- badge.add_child(letter)
+ var glyph := InputGlyph.new()
+ glyph.name = "InputGlyph"
+ glyph.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+ row.add_child(glyph)
  var action_label := _label(label_text,chakra,18,Color("f5f7ff"))
  action_label.name = "ActionLabel"
  action_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -173,7 +400,7 @@ func _action_button(key: String, label_text: String, tip: String, callback: Call
  var refresh = func():
   var active = b.has_focus() or b.is_hovered()
   action_label.add_theme_color_override("font_color",Color("6eb4ff") if active else Color("f5f7ff"))
-  surface.bg_color = Color("6eb4ff") if active else Color("cbd0dd")
+  glyph.modulate = Color("a5cfff") if active else Color.WHITE
  b.mouse_entered.connect(refresh)
  b.mouse_exited.connect(refresh)
  b.focus_entered.connect(refresh)
@@ -195,9 +422,6 @@ func _build_ui() -> void:
  ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
  header = _label("RETRO PASS ULTIMATE", orbitron,18,Color("dbd9e7"))
  ui.add_child(header)
- var badge := _label("SISTEMAS NO INFINITO",chakra,13,Color("8a849d"))
- badge.name = "PrototypeLabel"
- ui.add_child(badge)
  console_button = Button.new()
  console_button.name = "SelecionarMasterSystem"
  console_button.tooltip_text = "Selecionar Master System"
@@ -224,27 +448,33 @@ func _build_ui() -> void:
  ui.add_child(title)
  hint = _label("Clique no console ou pressione Enter para selecionar",chakra,17,Color("a3a5bb"))
  hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+ hint.visible = false
  ui.add_child(hint)
  status = _label("Protótipo de seleção · sem emulação",chakra,14,Color("777f99"))
  status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+ status.visible = false
  ui.add_child(status)
- footer = HBoxContainer.new()
- footer.alignment = BoxContainer.ALIGNMENT_CENTER
- footer.add_theme_constant_override("separation",28)
+ footer = HFlowContainer.new()
+ footer.alignment = FlowContainer.ALIGNMENT_CENTER
+ footer.add_theme_constant_override("h_separation",8)
+ footer.add_theme_constant_override("v_separation",0)
  ui.add_child(footer)
- inspect_button = _action_button("I","Inspecionar","Inspecionar em 3D · arraste para girar · I",toggle_inspection)
+ confirm_button = _action_button("confirm","Entrar","Entrar no sistema",func(): confirm_selection("footer"))
+ footer.add_child(confirm_button)
+ back_button = _action_button("back","Voltar","Voltar",go_back)
+ footer.add_child(back_button)
+ inspect_button = _action_button("inspect","Inspecionar","Inspecionar em 3D",toggle_inspection)
  inspect_button.name = "AproximarConsole"
  footer.add_child(inspect_button)
- motion_button = _action_button("M","Reduzir movimento","Alternar movimento reduzido · M",toggle_motion)
+ motion_button = _action_button("motion","Movimento","Reduzir movimento",toggle_motion)
  motion_button.name = "MovimentoReduzido"
  footer.add_child(motion_button)
- console_button.focus_next = inspect_button.get_path()
- inspect_button.focus_next = motion_button.get_path()
- motion_button.focus_next = console_button.get_path()
- reset_button = _action_button("R","Restaurar","Restaurar ângulo e zoom · R",reset_inspection)
- reset_button.visible = false
+ reset_button = _action_button("reset","Restaurar","Restaurar ângulo e zoom",reset_inspection)
  footer.add_child(reset_button)
+ settings_button = _action_button("settings","Controles","Símbolos e remapeamento — F1",toggle_control_settings)
+ footer.add_child(settings_button)
  _build_history_panel()
+ _build_control_settings()
 
 func _layout() -> void:
  if not is_instance_valid(ui): return
@@ -253,8 +483,6 @@ func _layout() -> void:
  var compact := s.x < 900
  header.position = Vector2(30,24)
  header.add_theme_font_size_override("font_size",15 if compact else 18)
- var badge: Label = ui.get_node("PrototypeLabel")
- badge.position = Vector2(30,52)
  viewport_container.position = Vector2(s.x*0.08,s.y*0.18).lerp(Vector2(s.x*0.015,s.y*0.25),history_blend)
  viewport_container.size = Vector2(s.x*0.84,s.y*0.44).lerp(Vector2(s.x*0.48,s.y*0.35),history_blend)
  if inspect_mode:
@@ -274,9 +502,11 @@ func _layout() -> void:
  hint.add_theme_font_size_override("font_size",14 if compact else 17)
  status.position = Vector2(0,s.y*(0.838 if system_logo.visible else 0.815))
  status.size = Vector2(s.x,23)
- var footer_width := 776.0 if inspect_mode else 508.0
- footer.position = Vector2((s.x-footer_width)*0.5,s.y*0.89)
- footer.size = Vector2(footer_width,48)
+ footer.position = Vector2(20,s.y-104)
+ footer.size = Vector2(s.x-40,96)
+ if settings_panel:
+  settings_panel.position = Vector2(maxf(12,(s.x-500)*0.5),maxf(12,(s.y-500)*0.5))
+  settings_panel.size = Vector2(minf(s.x-24,500),minf(s.y-24,500))
  system_logo.visible = systems[current_index].logo != null and not inspect_mode
  if history_panel:
   history_panel.position = Vector2(s.x*0.53,s.y*0.16)
@@ -369,7 +599,7 @@ func navigate(direction: int) -> void:
  transition.finished.connect(func(): transition_busy = false)
 
 func confirm_selection(source: String = "api") -> void:
- if not scene_active or not application_focused or transition_busy or history_open or inspect_mode or cooldown > 0.0 or systems.is_empty(): return
+ if not scene_active or not application_focused or settings_panel.visible or transition_busy or history_open or inspect_mode or cooldown > 0.0 or systems.is_empty(): return
  reset_dwell()
  auto_history_armed = false
  cooldown = 0.4
@@ -422,8 +652,11 @@ func reset_dwell() -> void:
  dwell_elapsed = 0.0
 
 func _advance_dwell(delta: float) -> void:
- var over_controls = inspect_button.is_hovered() or motion_button.is_hovered()
+ var over_controls := false
+ for button in footer.get_children():
+  if button.visible and button.is_hovered(): over_controls = true
  var eligible = scene_active and application_focused and auto_history_armed and not history_open and not inspect_mode and not transition_busy and not over_controls and (hovering if dwell_uses_mouse else console_button.has_focus())
+ if settings_panel.visible: eligible = false
  if not eligible:
   reset_dwell()
   return
@@ -437,7 +670,7 @@ func _settle_history_motion() -> void:
  _layout()
 
 func open_history(automatic: bool = false) -> void:
- if history_open or inspect_mode or not scene_active or not application_focused or transition_busy: return
+ if history_open or inspect_mode or settings_panel.visible or not scene_active or not application_focused or transition_busy: return
  reset_dwell()
  auto_history_armed = false
  history_open = true
@@ -457,6 +690,7 @@ func open_history(automatic: bool = false) -> void:
   history_transition.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
   history_transition.tween_property(self,"history_blend",1.0,0.45)
   history_transition.finished.connect(_layout)
+ _refresh_controls()
  print("COSMIC_HISTORY opened automatic=",automatic)
 
 func close_history() -> void:
@@ -477,6 +711,7 @@ func close_history() -> void:
   history_transition.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
   history_transition.tween_property(self,"history_blend",0.0,0.35)
   history_transition.finished.connect(func(): history_panel.visible = false; _layout())
+ _refresh_controls()
  print("COSMIC_HISTORY closed")
 
 func reset_inspection() -> void:
@@ -514,10 +749,12 @@ func close_inspection() -> void:
  auto_history_armed = false
  mouse_dwell_rearm_allowed = false
  reset_dwell()
+ _refresh_controls()
  _layout()
 
 func toggle_inspection() -> void:
  if not scene_active or not application_focused: return
+ if settings_panel.visible: return
  if inspect_mode:
   close_inspection()
   return
@@ -538,6 +775,7 @@ func toggle_inspection() -> void:
  hint.text = "Arraste para girar · roda para zoom · setas e +/− · R restaura"
  status.text = "Inspeção 3D · Esc ou I para voltar"
  inspect_button.grab_focus()
+ _refresh_controls()
  _layout()
 
 func _inspection_input(event: InputEvent) -> bool:
@@ -564,7 +802,6 @@ func _inspection_input(event: InputEvent) -> bool:
    KEY_DOWN: rotate_inspection(Vector2(0,14)); return true
    KEY_EQUAL,KEY_PLUS,KEY_KP_ADD: zoom_inspection(0.08); return true
    KEY_MINUS,KEY_KP_SUBTRACT: zoom_inspection(-0.08); return true
-   KEY_R: reset_inspection(); return true
    KEY_ESCAPE: close_inspection(); return true
  return false
 
@@ -580,6 +817,8 @@ func toggle_motion() -> void:
   if transition and transition.is_running(): transition.kill()
   transition_busy = false
   presentation.scale = Vector3.ONE
+
+ _refresh_controls()
 
 func set_scene_active(value: bool) -> void:
  scene_active = value
@@ -620,49 +859,87 @@ func _focus_returned() -> void:
  history_paused_for_focus = false
 
 func _input(event: InputEvent) -> void:
- if not scene_active or not application_focused: return
- if _inspection_input(event):
+ if not scene_active or not application_focused:
   get_viewport().set_input_as_handled()
   return
+ _observe_input_device(event)
+ if _settings_input(event):
+  get_viewport().set_input_as_handled()
+  return
+ if settings_panel.visible:
+  if input_profile.action_for(event) == "confirm":
+   _activate_focused_control()
+   get_viewport().set_input_as_handled()
+  return
+ if event is InputEventKey and event.pressed and event.echo:
+  var repeatable_navigation: bool = event.keycode in [KEY_LEFT,KEY_RIGHT,KEY_UP,KEY_DOWN] and event.keycode not in input_profile.keys.values()
+  var repeatable_zoom: bool = inspect_mode and event.keycode in [KEY_EQUAL,KEY_PLUS,KEY_KP_ADD,KEY_MINUS,KEY_KP_SUBTRACT] and event.keycode not in input_profile.keys.values()
+  if not repeatable_navigation and not repeatable_zoom:
+   get_viewport().set_input_as_handled()
+   return
  if event is InputEventMouseMotion:
   dwell_uses_mouse = true
   mouse_dwell_rearm_allowed = true
   if hovering and not history_open and not inspect_mode: auto_history_armed = true
  elif (event is InputEventKey and event.pressed) or (event is InputEventJoypadButton and event.pressed): dwell_uses_mouse = false
  if event is InputEventMouseMotion or (event is InputEventKey and event.pressed) or (event is InputEventMouseButton and event.pressed) or (event is InputEventJoypadButton and event.pressed): reset_dwell()
+ var action: String = input_profile.action_for(event)
+ if not action.is_empty():
+  match action:
+   "confirm": _activate_focused_control()
+   "back": go_back()
+   "inspect": toggle_inspection()
+   "motion": toggle_motion(); _refresh_controls()
+   "reset":
+    if inspect_mode: reset_inspection()
+  get_viewport().set_input_as_handled()
+  return
+ if _inspection_input(event):
+  get_viewport().set_input_as_handled()
+  return
  if event is InputEventMouseButton and event.pressed and event.double_click and console_button.get_global_rect().has_point(event.position):
   get_viewport().set_input_as_handled()
   return
  if event is InputEventKey and event.pressed:
-  if event.echo:
-   if event.keycode in [KEY_ENTER,KEY_KP_ENTER,KEY_SPACE,KEY_LEFT,KEY_RIGHT,KEY_I,KEY_M]: get_viewport().set_input_as_handled()
-   return
   match event.keycode:
+   KEY_F1: toggle_control_settings(); get_viewport().set_input_as_handled()
+   KEY_ESCAPE: go_back(); get_viewport().set_input_as_handled()
    KEY_LEFT: navigate(-1); get_viewport().set_input_as_handled()
    KEY_RIGHT: navigate(1); get_viewport().set_input_as_handled()
-   KEY_I: toggle_inspection(); get_viewport().set_input_as_handled()
-   KEY_ESCAPE:
-    if history_open: close_history(); get_viewport().set_input_as_handled()
    KEY_PAGEDOWN:
     if history_open: history_scroll.scroll_vertical += 220; get_viewport().set_input_as_handled()
    KEY_PAGEUP:
     if history_open: history_scroll.scroll_vertical -= 220; get_viewport().set_input_as_handled()
-   KEY_M: toggle_motion(); get_viewport().set_input_as_handled()
    KEY_ENTER,KEY_KP_ENTER,KEY_SPACE:
-    if console_button.has_focus():
-     confirm_selection("keyboard"); get_viewport().set_input_as_handled()
+    _activate_focused_control()
+    get_viewport().set_input_as_handled()
  if event is InputEventJoypadButton and event.pressed:
-  if event.button_index == JOY_BUTTON_A:
-   if inspect_button.has_focus(): toggle_inspection()
-   elif motion_button.has_focus(): toggle_motion()
-   elif reset_button.has_focus(): reset_inspection()
-   elif console_button.has_focus(): confirm_selection("gamepad_mapping")
+  if event.button_index in [JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_RIGHT]:
+   var direction := -1 if event.button_index == JOY_BUTTON_DPAD_LEFT else 1
+   if console_button.has_focus(): navigate(direction)
+   else:
+    var focused := get_viewport().gui_get_focus_owner()
+    if focused:
+     var target := focused.focus_previous if direction < 0 else focused.focus_next
+     if not target.is_empty(): focused.get_node(target).grab_focus()
    get_viewport().set_input_as_handled()
-  elif event.button_index == JOY_BUTTON_DPAD_LEFT: navigate(-1)
-  elif event.button_index == JOY_BUTTON_DPAD_RIGHT: navigate(1)
+  elif history_open and event.button_index in [JOY_BUTTON_DPAD_UP,JOY_BUTTON_DPAD_DOWN]:
+   history_scroll.scroll_vertical += -120 if event.button_index == JOY_BUTTON_DPAD_UP else 120
+   get_viewport().set_input_as_handled()
+ if event is InputEventJoypadMotion and not inspect_mode and not history_open and event.axis == JOY_AXIS_LEFT_X:
+  if absf(event.axis_value) < 0.3: axis_navigation_held = false
+  elif absf(event.axis_value) > 0.6 and not axis_navigation_held:
+   axis_navigation_held = true
+   navigate(-1 if event.axis_value < 0 else 1)
 
 func _process(delta: float) -> void:
  if not scene_active or not application_focused: return
+ if settings_panel.visible: return
+ if inspect_mode and input_device == "gamepad" and active_pad in Input.get_connected_joypads():
+  var direction := Vector2(Input.get_joy_axis(active_pad,JOY_AXIS_LEFT_X),Input.get_joy_axis(active_pad,JOY_AXIS_LEFT_Y))
+  if direction.length() > 0.25: rotate_inspection(direction * delta * 180.0)
+  var zoom_axis := Input.get_joy_axis(active_pad,JOY_AXIS_RIGHT_Y)
+  if absf(zoom_axis) > 0.25: zoom_inspection(-zoom_axis * delta * 0.5)
  _advance_dwell(delta)
  if history_transition and history_transition.is_running(): _layout()
  _update_hit_rect()

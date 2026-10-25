@@ -12,10 +12,13 @@ Este repositório contém código-fonte, não um executável Windows já validad
 
 ## Interações
 
+- X confirma e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.
 - I / Inspecionar: manipulação 3D separada da história.
 - Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
-- R / Restaurar: orientação e zoom iniciais. Esc / I / Voltar: sair.
-- M: reduzir movimento.
+- R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
+- M: pausar/retomar movimento.
+- F1 / Controles: escolher família de símbolos e remapear teclas/botões; configuração persiste localmente. Conflitos trocam as duas ações, sem apagar um comando. Restaurar controles padrão desfaz remapeamentos e a escolha manual de símbolos.
+- Controle: posição oeste (Xbox X / PlayStation quadrado) inspeciona; sul confirma e leste volta. Nomes ambíguos mostram posições genéricas, sem adivinhar hardware. A seleção manual de família altera símbolos, não identidade detectada.
 - Permanecer no console por oito segundos elegíveis abre a história; não interrompe inspeção.
 - Perder foco preserva a imagem e o estado, cancelando o arraste.
 
@@ -31,6 +34,8 @@ Execute no diretório do projeto, por exemplo:
     godot --headless --path . --script cosmic/test_history.gd
     godot --headless --path . --script cosmic/test_inspection.gd
     godot --headless --path . --script cosmic/test_focus_visibility.gd
+    godot --headless --path . --script cosmic/test_controls.gd
+    godot --headless --path . --script cosmic/test_controls_propagation.gd
     godot --headless --path . --script cosmic/test_zoom_stress.gd
 
 Em Linux/macOS, `bash tools/verify_project.sh` executa a importação, a suíte e a auditoria de imagens antigas em sequência.
