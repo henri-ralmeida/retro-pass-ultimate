@@ -13,7 +13,7 @@ Este repositório contém código-fonte, não um executável Windows já validad
 ## Interações
 
 - X entra no sistema e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.
-- I / Inspecionar: manipulação 3D separada da história.
+- I / Inspecionar: manipulação 3D livre separada da história, tanto no console quanto na caixa. Na caixa, não há giro automático nem atalhos de vistas fixas; arraste para escolher qualquer ângulo.
 - Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
 - R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
 - M: pausar/retomar movimento.

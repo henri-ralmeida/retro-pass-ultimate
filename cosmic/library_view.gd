@@ -87,7 +87,6 @@ var footer: HBoxContainer
 var parts: HBoxContainer
 var lid_button: Button
 var cartridge_button: Button
-var presets: HBoxContainer
 var zoom_controls: HBoxContainer
 var zoom_label: Label
 var inspect_button: Button
@@ -98,7 +97,6 @@ var previous_button: Button
 var next_button: Button
 var cards: Array[Button] = []
 var card_textures: Array[TextureRect] = []
-var preset_buttons: Array[Button] = []
 var all_buttons: Array[Button] = []
 var built := false
 var layout_size := Vector2.ZERO
@@ -125,16 +123,20 @@ func _build() -> void:
  _load_items()
  _build_world()
  heading = _label("MASTER SYSTEM  /  BIBLIOTECA",orbitron,17,Color("dedeea"))
- disclosure = _label("Acervo local · capas originais quando disponíveis · sem jogos",chakra,15,Color("a8b9d3"))
+ disclosure = _label("Acervo local · sem jogos",chakra,15,Color("a8b9d3"))
  chapter = _label("01  /  ACERVO LOCAL",chakra,14,Color("9dd8f2"))
- item_title = _label("",orbitron,39,Color("f5f1ff"))
+ item_title = _label("",orbitron,28,Color("f5f1ff"))
+ item_title.clip_text = true
+ item_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
  item_subtitle = _label("",chakra,16,Color("bdc5de"))
+ item_subtitle.clip_text = true
+ item_subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
  description = _label("",chakra,18,Color("b0b6ce"))
  description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
  collection_label = _label("COLEÇÃO",chakra,12,Color("828da9"))
  position_label = _label("01  /  02",orbitron,14,Color("d5dbee"))
  position_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
- mode_label = _label("OBJETO 3D  ·  FRENTE / LOMBADA / VERSO",chakra,12,Color("8995b2"))
+ mode_label = _label("",chakra,12,Color("8995b2"))
  mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
  help_label = _label("←  →  mudar de capa     ·     Inspecionar para girar a caixa",chakra,14,Color("a5aec7"))
  help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -167,16 +169,6 @@ func _build() -> void:
  motion_button = _mapped_button("motion","Pausar","Reduzir o movimento do fundo cósmico",_toggle_motion)
  back_button = _mapped_button("back","Voltar","Voltar ao Master System",go_back)
  for button in [inspect_button,reset_button,motion_button,back_button]: footer.add_child(button)
- presets = HBoxContainer.new()
- presets.alignment = BoxContainer.ALIGNMENT_CENTER
- presets.add_theme_constant_override("separation",6)
- presets.mouse_filter = Control.MOUSE_FILTER_IGNORE
- add_child(presets)
- for entry in [["Frente",0.0],["Lombada",PI*0.5],["Verso",PI]]:
-  var button := _plain_button(entry[0],"Ver " + str(entry[0]).to_lower() + " da caixa",show_face.bind(float(entry[1])))
-  button.custom_minimum_size = Vector2(84,34)
-  presets.add_child(button)
-  preset_buttons.append(button)
  parts = HBoxContainer.new()
  parts.alignment = BoxContainer.ALIGNMENT_CENTER
  parts.add_theme_constant_override("separation",8)
@@ -341,6 +333,8 @@ func _build_card(index: int) -> void:
  card_textures.append(image)
  var title_label := _label(data.title,chakra,18,Color("e5e9f5"))
  title_label.name = "CardTitle"
+ title_label.clip_text = true
+ title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
  title_label.position = Vector2(67,13)
  button.add_child(title_label)
  var subtitle_label := _label(data.subtitle,chakra,11,Color("a4b1cc"))
@@ -465,6 +459,8 @@ func _select(index: int) -> void:
   pivot.add_child(box)
   if box.has_method("get_local_bounds"): model_bounds = box.get_local_bounds()
  item_title.text = data.title
+ item_title.tooltip_text = data.title
+ item_title.accessibility_name = data.title
  item_subtitle.text = data.subtitle
  description.text = data.description
  chapter.text = "%02d  /  ACERVO LOCAL" % (index+1)
@@ -488,8 +484,8 @@ func _refresh_card_textures() -> void:
  for face in ["front", "spine", "back"]:
   if GameBox.load_artwork(ITEMS[current_index].get("cover_" + face, null)) == null:
    missing.append({"front":"frente", "spine":"lombada", "back":"verso"}[face])
- description.text = str(ITEMS[current_index].description)
- if not missing.is_empty(): description.text = "Arte indisponível: " + ", ".join(missing) + ". Sem substituições fictícias."
+ description.text = "Capa indisponível" if missing.size() == 3 else ("Arte parcial" if not missing.is_empty() else "")
+ description.tooltip_text = "Arte indisponível: " + ", ".join(missing) if not missing.is_empty() else ""
 
 func _build_neighbors() -> void:
  for node in neighbor_boxes:
@@ -547,13 +543,6 @@ func reset_inspection() -> void:
  yaw = DEFAULT_YAW
  pitch = DEFAULT_PITCH
  zoom = 1.0
- _apply_rotation()
-
-func show_face(angle: float) -> void:
- if not inspect_mode: return
- cancel_drag()
- yaw = angle
- pitch = 0.0
  _apply_rotation()
 
 func rotate_inspection(relative: Vector2) -> void:
@@ -617,12 +606,11 @@ func refresh_controls() -> void:
  reset_button.visible = inspect_mode
  carousel.visible = not inspect_mode
  parts.visible = inspect_mode and box.can_open()
- presets.visible = inspect_mode
  zoom_controls.visible = inspect_mode
- help_label.text = "Arraste para girar · roda ou +/− para zoom · setas giram" if inspect_mode else "←  →  mudar de capa     ·     Inspecionar para girar a caixa"
+ help_label.text = "Arrastar / setas: girar · +/−: zoom" if inspect_mode else "←  →  selecionar jogo"
  if gamepad:
-  help_label.text = "Analógico / direcional: girar · analógico direito: zoom" if inspect_mode else "Direcional: mudar de capa · Tab ou foco para escolher ações"
- mode_label.text = str(ITEMS[current_index].title).to_upper() + "  ·  INSPEÇÃO LIVRE" if inspect_mode else "OBJETO 3D  ·  FRENTE / LOMBADA / VERSO"
+  help_label.text = "Analógico: girar · direito: zoom" if inspect_mode else "Direcional: selecionar jogo"
+ mode_label.visible = false
  _refresh_focus()
 
 func _refresh_focus() -> void:
@@ -639,6 +627,13 @@ func _refresh_focus() -> void:
   available[index].focus_neighbor_top = previous
   available[index].focus_neighbor_bottom = following
 
+func _fit_title(label: Label, preferred: int, minimum: int) -> void:
+ var font: Font = label.get_theme_font("font")
+ var font_size := preferred
+ while font_size > minimum and font.get_string_size(label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,font_size).x > label.size.x:
+  font_size -= 1
+ label.add_theme_font_size_override("font_size",font_size)
+
 func layout() -> void:
  if not built or not is_inside_tree(): return
  var s := get_viewport().get_visible_rect().size
@@ -652,13 +647,12 @@ func layout() -> void:
  scan_button.size = Vector2(134,42)
  disclosure.position = Vector2(margin,header_y+30)
  disclosure.add_theme_font_size_override("font_size",13 if narrow else 15)
- var compact := s.y < 620
  var title_y := s.y-222.0
  chapter.position = Vector2(margin,94)
  item_title.position = Vector2(margin,title_y)
  item_title.size = Vector2(s.x-margin*2,48)
  item_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
- item_title.add_theme_font_size_override("font_size",25 if narrow else 32)
+ _fit_title(item_title,25 if narrow else 28,18)
  item_subtitle.position = Vector2(margin,title_y+44)
  item_subtitle.size = Vector2(s.x-margin*2,24)
  item_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -684,7 +678,11 @@ func layout() -> void:
   cards[index].position = Vector2((s.x-row_width)*0.5+slot*(card_width+8),s.y-180)
   cards[index].size = Vector2(card_width,34)
   cards[index].get_node("CardTitle").position = Vector2(10,7)
-  cards[index].get_node("CardTitle").add_theme_font_size_override("font_size",14)
+  var card_title: Label = cards[index].get_node("CardTitle")
+  card_title.clip_text = true
+  card_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+  card_title.size = Vector2(card_width-20,22)
+  card_title.add_theme_font_size_override("font_size",14)
   cards[index].get_node("CardNumber").visible = false
   card_textures[index].visible = false
   for child in cards[index].get_children():
@@ -692,8 +690,8 @@ func layout() -> void:
  viewport_container.position = Vector2(margin+24,102)
  viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-324))
  if inspect_mode:
-  viewport_container.position = Vector2(s.x*0.15,112)
-  viewport_container.size = Vector2(s.x*0.70,s.y-364)
+  viewport_container.position = Vector2(margin+24,88)
+  viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-292))
  item_title.visible = not inspect_mode
  item_subtitle.visible = not inspect_mode and ITEMS.size() == 1
  chapter.visible = not inspect_mode
@@ -706,14 +704,12 @@ func layout() -> void:
  position_label.position = Vector2(s.x-130,94)
  position_label.size = Vector2(90,22)
  position_label.visible = not inspect_mode
- mode_label.visible = inspect_mode
+ mode_label.visible = false
  mode_label.position = Vector2(0,88 if inspect_mode else s.y-151)
  mode_label.size = Vector2(s.x,24)
- parts.position = Vector2(s.x*0.5-170,s.y-230)
- parts.size = Vector2(340,36)
- presets.position = Vector2(s.x*0.5-220,s.y-187)
- presets.size = Vector2(280,38)
- zoom_controls.position = Vector2(s.x*0.5+76,s.y-187)
+ parts.position = Vector2(s.x*0.5-240,s.y-187)
+ parts.size = Vector2(340,38)
+ zoom_controls.position = Vector2(s.x*0.5+112 if box.can_open() else s.x*0.5-64,s.y-187)
  zoom_controls.size = Vector2(128,38)
  help_label.position = Vector2(16,s.y-130)
  help_label.size = Vector2(s.x-32,24)
@@ -722,6 +718,9 @@ func layout() -> void:
  footer.size = Vector2(s.x-margin*2.0,48)
  legal_label.position = Vector2(16,s.y-28)
  legal_label.size = Vector2(s.x-32,20)
+ legal_label.visible = false
+ disclosure.visible = not inspect_mode
+ scan_button.visible = not inspect_mode
  refresh_controls()
  _frame_box()
  queue_redraw()
