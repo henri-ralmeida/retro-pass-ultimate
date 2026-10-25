@@ -53,13 +53,17 @@ func _ready() -> void:
   categories[category] = checkbox
   column.add_child(checkbox)
   checkbox.toggled.connect(func(_pressed: bool): _invalidate_confirmation())
- start_button = _button(column, "Revisar processamento local", _review)
- resume_button = _button(column, "Retomar / tentar novamente", _review_resume)
+ var actions := HFlowContainer.new()
+ actions.add_theme_constant_override("h_separation",8)
+ actions.add_theme_constant_override("v_separation",8)
+ column.add_child(actions)
+ start_button = _button(actions, "Revisar processamento local", _review)
+ resume_button = _button(actions, "Retomar / tentar novamente", _review_resume)
  resume_button.disabled = _last_plan.is_empty()
- cancel_button = _button(column, "Cancelar processamento", service.request_cancel)
+ cancel_button = _button(actions, "Cancelar processamento", service.request_cancel)
  cancel_button.disabled = true
- skip_button = _button(column, "Pular", func(): _dismiss(true))
- later_button = _button(column, "Configurar depois", func(): _dismiss(false))
+ skip_button = _button(actions, "Pular", func(): _dismiss(true))
+ later_button = _button(actions, "Configurar depois", func(): _dismiss(false))
  progress_bar = ProgressBar.new()
  progress_bar.show_percentage = false
  column.add_child(progress_bar)
@@ -80,14 +84,21 @@ func _ready() -> void:
  confirm_dialog.cancel_button_text = "Cancelar"
  confirm_dialog.title = "Autorizar leitura das mídias locais selecionadas"
  confirm_dialog.ok_button_text = "Confirmar processamento local"
+ preload("res://cosmic/ui_icons.gd").iconify(confirm_dialog.get_ok_button(),"unlocked","Confirmar processamento local — autorizar leitura")
+ preload("res://cosmic/ui_icons.gd").iconify(confirm_dialog.get_cancel_button(),"close","Cancelar — não autorizar leitura")
  confirm_dialog.confirmed.connect(_confirm)
  confirm_dialog.canceled.connect(func(): _pending_plan = {})
  add_child(confirm_dialog)
  start_button.grab_focus()
 
-func _button(column: VBoxContainer, text: String, action: Callable) -> Button:
+func _button(column: Container, text: String, action: Callable) -> Button:
  var button := Button.new()
- button.text = text
+ var icon := "inspect"
+ if "Retomar" in text: icon = "retry"
+ elif "Cancelar" in text: icon = "close"
+ elif "Pular" in text: icon = "next"
+ elif "depois" in text: icon = "back"
+ preload("res://cosmic/ui_icons.gd").iconify(button,icon,text)
  button.pressed.connect(action)
  column.add_child(button)
  return button

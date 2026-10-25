@@ -1,6 +1,11 @@
 extends Control
 ## Atari-only 3D collection/inspection checkpoint; deliberately no SMS GameBox or flat manual reader.
 signal exit_requested
+const AchievementsPanel = preload("res://cosmic/achievements_panel.gd")
+const UiIcons = preload("res://cosmic/ui_icons.gd")
+var achievements_panel: Control
+var trophies_button: Button
+var achievements_return_gate := false
 const CatalogChoice = preload("res://cosmic/catalog_choice.gd")
 const VisitAutostart = preload("res://cosmic/visit_autostart.gd")
 const InsertionSession = preload("res://cosmic/atari_insertion_session.gd")
@@ -116,12 +121,26 @@ func _build_ui() -> void:
  action_buttons.previous = _button("Página anterior",func(): turn_manual(-1))
  action_buttons.next = _button("Próxima página",func(): turn_manual(1))
  action_buttons.reset = _button("Restaurar vista",reset_inspection)
+ trophies_button = _button("Troféus, comentários e hubs",_open_achievements)
+ UiIcons.iconify(trophies_button,"trophy","Troféus, comentários e hubs")
  back_button = _button("Voltar",go_back)
+ achievements_panel = AchievementsPanel.new()
+ add_child(achievements_panel)
+ achievements_panel.configure(host)
+ achievements_panel.closed.connect(func(): achievements_return_gate = true)
  _refresh_status()
 
 func _button(text: String, action: Callable) -> Button:
  var button := Button.new()
- button.text = text
+ var icon := "inspect"
+ if "caixa" in text.to_lower(): icon = "box"
+ if "cartucho" in text.to_lower(): icon = "insert"
+ if "manual" in text.to_lower(): icon = "manual"
+ if "anterior" in text.to_lower(): icon = "previous"
+ if "próxima" in text.to_lower(): icon = "next"
+ if "restaurar" in text.to_lower(): icon = "reset"
+ if "voltar" in text.to_lower(): icon = "back"
+ UiIcons.iconify(button,icon,text)
  button.custom_minimum_size.y = 48
  button.pressed.connect(action)
  button.button_down.connect(cancel_drag)
@@ -183,6 +202,8 @@ func open() -> void:
  back_button.grab_focus()
 
 func close() -> void:
+ if is_instance_valid(achievements_panel) and achievements_panel.visible: achievements_panel.close_panel()
+ achievements_return_gate = false
  cancel_pending_autostart()
  catalog_choice.end_visit()
  if state == "closed":
@@ -282,6 +303,10 @@ func _host_flag(property_name: String, fallback: bool) -> bool:
  return fallback
 
 func _process(delta: float) -> void:
+ if achievements_return_gate and is_instance_valid(host):
+  var snapshot = host.get("media_input_snapshot")
+  if snapshot == null or preload("res://cosmic/ui_input_gate.gd").neutral(snapshot,host): achievements_return_gate = false
+ if is_instance_valid(achievements_panel) and achievements_panel.visible: return
  advance_insertion(delta,_host_flag("application_focused",true) and _host_flag("scene_active",true))
 
 func advance_insertion(delta: float, focused: bool = true) -> void:
@@ -326,6 +351,9 @@ func _apply_manual_turns() -> void:
    leaf.position.y = 0.0004 + index * 0.0001
 
 func go_back() -> void:
+ if is_instance_valid(achievements_panel) and achievements_panel.visible:
+  achievements_panel.go_back()
+  return
  cancel_pending_autostart()
  if state == "insertion" and insertion_failed:
   # A deleted/stale node has no valid physical reverse path. Hide before cleanup
@@ -389,6 +417,7 @@ func _refresh_status() -> void:
  for key in ["box","cartridge","manual"]:
   action_buttons[key].visible = state == "collection"
   action_buttons[key].disabled = not exhibit.asset_roots.has(key)
+ trophies_button.visible = state == "collection"
  action_buttons.insert.visible = state == "collection"
  action_buttons.insert.disabled = not insertion_ready
  action_buttons.carton.visible = state == "inspection" and inspection_role == "box"
@@ -453,6 +482,11 @@ func _direction_input(horizontal: int, vertical: int) -> void:
 
 func handle_event(event: InputEvent) -> bool:
  if state == "closed" or not visible: return false
+ if is_instance_valid(achievements_panel) and achievements_panel.visible: return achievements_panel.route_input(event)
+ if achievements_return_gate:
+  var snapshot = host.get("media_input_snapshot")
+  if snapshot == null or preload("res://cosmic/ui_input_gate.gd").neutral(snapshot,host): achievements_return_gate = false
+  return true
  var profile = host.get("input_profile") if is_instance_valid(host) else null
  var action: String = profile.action_for(event) if profile else ""
  if not action.is_empty():
@@ -511,3 +545,13 @@ func handle_event(event: InputEvent) -> bool:
    _: return false
   return true
  return false
+
+func _open_achievements() -> void:
+ if state != "collection": return
+ cancel_pending_autostart()
+ cancel_drag()
+ achievements_panel.open_for(ITEMS[current_index],trophies_button)
+
+func focus_changed(value: bool) -> void:
+ cancel_drag()
+ if is_instance_valid(achievements_panel): achievements_panel.focus_changed(value)

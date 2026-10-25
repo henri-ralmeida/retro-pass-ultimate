@@ -157,7 +157,7 @@ func run() -> void:
  scene.family_selector.select(2)
  var restore_button: Button
  for candidate in scene.settings_panel.find_children("*", "Button", true, false):
-  if candidate.text == "Restaurar controles padrão": restore_button = candidate
+  if candidate.accessibility_name == "Restaurar controles padrão": restore_button = candidate
  check(restore_button != null, "Settings expose a restore-defaults button")
  if restore_button:
   restore_button.grab_focus()

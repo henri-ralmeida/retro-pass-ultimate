@@ -214,7 +214,14 @@ func _label(value: String, font_size: int, color: Color) -> Label:
 
 func _button(value: String, description: String, callback: Callable) -> Button:
  var button := Button.new()
- button.text = value
+ var icon := "manual"
+ if "anterior" in description: icon = "previous"
+ elif "próxima" in description: icon = "next"
+ elif "Afastar" in description: icon = "zoom_out"
+ elif "Aproximar" in description or "Ampliar" in description: icon = "zoom_in"
+ elif "repor" in description: icon = "reset"
+ elif "Devolver" in description: icon = "back"
+ preload("res://cosmic/ui_icons.gd").iconify(button,icon,description)
  button.tooltip_text = description
  button.accessibility_name = description
  button.custom_minimum_size = Vector2(42, 38)
@@ -1034,12 +1041,14 @@ func _update_labels() -> void:
  _previous.disabled = turned_leaves <= 0 and not flip_active
  _next.disabled = turned_leaves >= _max_turned() and not flip_active
  _read.disabled = flip_active or _transfer_direction != 0
- _read.text = "Ampliar página %d" % (current_page + 1)
+ _read.tooltip_text = "Ampliar página %d" % (current_page + 1)
+ _read.accessibility_name = _read.tooltip_text
  _read.visible = not reading_mode
  _previous.visible = not reading_mode
  _next.visible = not reading_mode
- _view_reset.text = "Centralizar" if reading_mode else "Vista 3D"
- _back.text = "Voltar ao livreto" if reading_mode else "Devolver"
+ _view_reset.tooltip_text = "Centralizar" if reading_mode else "Vista 3D"
+ _view_reset.accessibility_name = _view_reset.tooltip_text
+ _back.text = ""
  _back.tooltip_text = "Sair do zoom e conservar esta página no mesmo livreto 3D" if reading_mode else "Devolver o mesmo livreto à caixa"
  _back.accessibility_name = _back.tooltip_text
  _warning.text = ""

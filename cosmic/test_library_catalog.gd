@@ -32,7 +32,7 @@ func run() -> void:
  check(not view.handle_event(escape),"Modal chooser input is not consumed by library navigation")
  view.scan_dialog.hide()
  view._scan_folder(ProjectSettings.globalize_path(folder))
- check(view.scan_button.text == "Cancelar leitura","Scan control becomes explicit cancellation instead of permitting duplicate requests")
+ check(view.scan_button.text.is_empty() and view.scan_button.accessibility_name == "Cancelar leitura da pasta local","Scan control becomes explicit cancellation instead of permitting duplicate requests")
  while view.scan_thread != null: await process_frame
  check(view.ITEMS.size() == 1 and view.ITEMS[0].title == "Local Fixture","Completed scan replaces collection with actual filename item")
  check(view.box.get_meta("original_room_geometry",false),"Scanned entry uses original articulated geometry, not simplified shell")

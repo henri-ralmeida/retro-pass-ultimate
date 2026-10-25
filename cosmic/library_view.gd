@@ -3,6 +3,11 @@ extends Control
 ## Never executes ROMs, emulation, automatic scans, or network scraping.
 ## Host owns the transition and routes input here before its system selector.
 signal exit_requested
+const AchievementsPanel = preload("res://cosmic/achievements_panel.gd")
+const UiIcons = preload("res://cosmic/ui_icons.gd")
+var achievements_panel: Control
+var trophies_button: Button
+var achievements_return_gate := false
 
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
 const GameBox = preload("res://cosmic/game_box.gd")
@@ -229,6 +234,7 @@ func _build() -> void:
  previous_button = _plain_button("‹","Capa anterior",func(): navigate(-1))
  next_button = _plain_button("›","Próxima capa",func(): navigate(1))
  scan_button = _plain_button("Adicionar pasta","Escolher pasta local e atualizar catálogo",_choose_scan_folder)
+ UiIcons.iconify(scan_button,"folder","Escolher pasta local e atualizar catálogo")
  add_child(scan_button)
  scan_dialog = FileDialog.new()
  scan_dialog.title = "Escolha a pasta local de jogos"
@@ -256,8 +262,15 @@ func _build() -> void:
  insert_button.accessibility_name = "Inserir cartucho no console"
  manual_button = _mapped_button("confirm","Manual","Ler o manual deste jogo",_open_manual)
  for state in ["normal","hover","pressed","disabled"]: manual_button.add_theme_stylebox_override(state,StyleBoxEmpty.new())
- manual_button.custom_minimum_size = Vector2(132,46)
- for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,motion_button,back_button]: footer.add_child(button)
+ manual_button.custom_minimum_size = Vector2(88,46)
+ trophies_button = _plain_button("","Troféus, comentários e hubs",_open_achievements)
+ UiIcons.iconify(trophies_button,"trophy","Troféus, comentários e hubs")
+ manual_button.custom_minimum_size.x = 88
+ for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,trophies_button,motion_button,back_button]: footer.add_child(button)
+ achievements_panel = AchievementsPanel.new()
+ add_child(achievements_panel)
+ achievements_panel.configure(host)
+ achievements_panel.closed.connect(func(): achievements_return_gate = true; _refresh_focus())
  manual_reader = load("res://cosmic/manual_book_reader.gd").new()
  add_child(manual_reader)
  manual_reader.configure(host)
@@ -388,9 +401,8 @@ func _mapped_button(action: String, value: String, tip: String, callback: Callab
   button.add_child(glyph)
   button.custom_minimum_size = Vector2(148,46)
  _decorate_button(button)
- # Keep the accepted contextual keycap/text footer, not large panels.
- for state in ["normal","hover","pressed","disabled"]:
-  button.add_theme_stylebox_override(state,StyleBoxEmpty.new())
+ # Contextual binding glyph plus action icon; captions stay accessible only.
+ UiIcons.decorate(button)
  var focus_line := StyleBoxFlat.new()
  focus_line.bg_color = Color(0,0,0,0)
  focus_line.border_color = Color("91bddf")
@@ -490,19 +502,19 @@ func _scan_folder(folder: String) -> void:
  scan_mutex.lock()
  scan_cancelled = false
  scan_mutex.unlock()
- scan_button.text = "Cancelar leitura"
+ UiIcons.iconify(scan_button,"close","Cancelar leitura da pasta local")
  disclosure.text = "Lendo pasta local… nenhuma busca online configurada"
  scan_thread = Thread.new()
  var error := scan_thread.start(func(): return scanner.scan_folder(folder, {"cancelled":_scan_was_cancelled}))
  if error != OK:
   scan_thread = null
-  scan_button.text = "Adicionar pasta"
+  UiIcons.iconify(scan_button,"folder","Escolher pasta local e atualizar catálogo")
   disclosure.text = "Não foi possível iniciar a leitura da pasta."
 
 func _finish_scan() -> void:
  var result: Dictionary = scan_thread.wait_to_finish()
  scan_thread = null
- scan_button.text = "Adicionar pasta"
+ UiIcons.iconify(scan_button,"folder","Escolher pasta local e atualizar catálogo")
  if result.get("status", "error") != "ok":
   disclosure.text = "Leitura não concluída. Catálogo anterior preservado."
   return
@@ -568,6 +580,8 @@ func open() -> void:
  confirm_button.grab_focus()
 
 func close() -> void:
+ if is_instance_valid(achievements_panel) and achievements_panel.visible: achievements_panel.close_panel()
+ achievements_return_gate = false
  cancel_pending_autostart()
  visible = false # Hide before force-teardown; normal Back always retraces.
  if insertion_active or insertion_failed:
@@ -747,6 +761,9 @@ func _toggle_motion() -> void:
  refresh_controls()
 
 func go_back() -> void:
+ if is_instance_valid(achievements_panel) and achievements_panel.visible:
+  achievements_panel.go_back()
+  return
  cancel_pending_autostart()
  if insertion_failed:
   close()
@@ -931,6 +948,7 @@ func _frame_box() -> void:
 
 func refresh_controls() -> void:
  if not built: return
+ trophies_button.visible = not (insertion_active or insertion_failed or inspect_mode or manual_framing_active or manual_release_direction != 0)
  var gamepad: bool = host.get("input_device") == "gamepad"
  var name_value: String = str(host.get("active_pad_name"))
  var profile = host.get("input_profile")
@@ -978,6 +996,8 @@ func refresh_controls() -> void:
  var motion_label = motion_button.find_child("ActionLabel",true,false)
  if motion_label: motion_label.text = "Animar" if host.get("reduced_motion") == true else "Pausar"
  motion_button.accessibility_name = "Animar fundo" if host.get("reduced_motion") == true else "Pausar movimento do fundo"
+ var motion_icon = motion_button.find_child("ActionIcon",true,false)
+ if motion_icon: motion_icon.texture = UiIcons.texture("confirm" if host.get("reduced_motion") == true else "motion")
  reset_button.visible = inspect_mode and not approach_busy and not returning_to_carousel
  zoom_controls.visible = inspect_mode and not returning_to_carousel
  help_label.text = "Arrastar / setas: girar · +/−: zoom" if inspect_mode else "←  →  selecionar jogo"
@@ -1093,7 +1113,7 @@ func layout() -> void:
  help_label.add_theme_font_size_override("font_size",13 if narrow else 14)
  # Five contextual actions fit at supported narrow widths without clipping.
  for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
-  button.custom_minimum_size.x = 132.0 if narrow else 144.0
+  button.custom_minimum_size.x = 84.0 if narrow else 88.0
   var label = button.find_child("ActionLabel",true,false)
   if label: label.add_theme_font_size_override("font_size",16 if narrow else 18)
  footer.add_theme_constant_override("separation",8 if narrow else 14)
@@ -1154,6 +1174,11 @@ func _move_focus(direction: int) -> void:
 
 func handle_event(event: InputEvent) -> bool:
  if not visible or not built: return false
+ if is_instance_valid(achievements_panel) and achievements_panel.visible: return achievements_panel.route_input(event)
+ if achievements_return_gate:
+  var snapshot = host.get("media_input_snapshot")
+  if snapshot == null or preload("res://cosmic/ui_input_gate.gd").neutral(snapshot,host): achievements_return_gate = false
+  return true
  if insertion_active or insertion_failed:
   cancel_drag()
   if host.get("application_focused") == false or host.get("scene_active") == false: return true
@@ -1278,6 +1303,10 @@ func handle_event(event: InputEvent) -> bool:
  return false
 
 func _process(delta: float) -> void:
+ if achievements_return_gate and is_instance_valid(host):
+  var snapshot = host.get("media_input_snapshot")
+  if snapshot == null or preload("res://cosmic/ui_input_gate.gd").neutral(snapshot,host): achievements_return_gate = false
+ if is_instance_valid(achievements_panel) and achievements_panel.visible: return
  if insertion_active or insertion_failed:
   if visible and insertion_active and not insertion_failed: advance_insertion(delta)
   return
@@ -1619,3 +1648,13 @@ func _restore_insertion_neighbors() -> void:
   if is_instance_valid(neighbor): neighbor.transform = record.pose
  if is_instance_valid(carousel) and insertion_active: carousel.transform = insertion_carousel_rest
  insertion_neighbor_rest.clear()
+
+func _open_achievements() -> void:
+ if insertion_active or insertion_failed or inspect_mode or manual_framing_active or manual_release_direction != 0: return
+ cancel_pending_autostart()
+ cancel_drag()
+ achievements_panel.open_for(ITEMS[current_index],trophies_button)
+
+func focus_changed(value: bool) -> void:
+ cancel_drag()
+ if is_instance_valid(achievements_panel): achievements_panel.focus_changed(value)

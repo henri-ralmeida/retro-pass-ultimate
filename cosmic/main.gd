@@ -207,6 +207,7 @@ func _refresh_controls() -> void:
  for button in footer.get_children():
   var action: String = button.get_meta("action","")
   var glyph = button.find_child("InputGlyph",true,false)
+  glyph.visible = action != "local_media"
   if action == "local_media":
    glyph.symbol = ""
    glyph.family = "keyboard"
@@ -268,8 +269,7 @@ func _build_control_settings() -> void:
  for port in 2:
   var sms_button := Button.new()
   sms_button.name = "ConfigureSmsPlayer%d" % (port + 1)
-  sms_button.text = "Master System · Jogador %d" % (port + 1)
-  sms_button.accessibility_name = sms_button.text
+  preload("res://cosmic/ui_icons.gd").iconify(sms_button,"gamepad","Master System · Jogador %d" % (port + 1))
   sms_button.custom_minimum_size.y = 48
   sms_button.pressed.connect(_open_controller_settings.bind(port,sms_button))
   column.add_child(sms_button)
@@ -295,12 +295,12 @@ func _build_control_settings() -> void:
   mapping_buttons[action] = button
   column.add_child(button)
  var defaults := Button.new()
- defaults.text = "Restaurar controles padrão"
+ preload("res://cosmic/ui_icons.gd").iconify(defaults,"reset","Restaurar controles padrão")
  defaults.custom_minimum_size.y = 38
  defaults.pressed.connect(_restore_control_defaults)
  column.add_child(defaults)
  var close := Button.new()
- close.text = "Voltar"
+ preload("res://cosmic/ui_icons.gd").iconify(close,"back","Voltar")
  close.custom_minimum_size.y = 38
  close.pressed.connect(toggle_control_settings)
  column.add_child(close)
@@ -466,7 +466,7 @@ func _label(text_value: String, font: Font, px: int, color: Color) -> Label:
 
 func _action_button(key: String, label_text: String, tip: String, callback: Callable) -> Button:
  var b := Button.new()
- b.custom_minimum_size = Vector2(144,48)
+ b.custom_minimum_size = Vector2(88,48)
  b.set_meta("action",key)
  b.tooltip_text = tip
  b.accessibility_name = label_text
@@ -485,9 +485,20 @@ func _action_button(key: String, label_text: String, tip: String, callback: Call
  glyph.size_flags_vertical = Control.SIZE_SHRINK_CENTER
  row.add_child(glyph)
  var action_label := _label(label_text,chakra,18,Color("f5f7ff"))
+ action_label.visible = false
  action_label.name = "ActionLabel"
  action_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
  row.add_child(action_label)
+ var action_icon := TextureRect.new()
+ action_icon.name = "ActionIcon"
+ action_icon.texture = preload("res://cosmic/ui_icons.gd").texture(preload("res://cosmic/ui_icons.gd").action_icon(key,label_text))
+ action_icon.custom_minimum_size = Vector2(26,26)
+ action_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+ action_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+ action_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+ action_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ row.add_child(action_icon)
+ preload("res://cosmic/ui_icons.gd").decorate(b)
  var refresh = func():
   var active = b.has_focus() or b.is_hovered()
   action_label.add_theme_color_override("font_color",Color("6eb4ff") if active else Color("f5f7ff"))
@@ -502,6 +513,8 @@ func _action_button(key: String, label_text: String, tip: String, callback: Call
 func _set_action_label(button: Button, text_value: String) -> void:
  var label_node = button.find_child("ActionLabel",true,false)
  if label_node: label_node.text = text_value
+ var icon_node = button.find_child("ActionIcon",true,false)
+ if icon_node: icon_node.texture = preload("res://cosmic/ui_icons.gd").texture(preload("res://cosmic/ui_icons.gd").action_icon(str(button.get_meta("action","")),text_value))
  button.accessibility_name = text_value
 
 func _build_ui() -> void:
@@ -1037,6 +1050,7 @@ func toggle_motion() -> void:
 func set_scene_active(value: bool) -> void:
  if not value: controller_click_active = false
  if is_instance_valid(controller_panel): controller_panel.focus_changed(value and application_focused)
+ if is_instance_valid(library_view) and library_view.has_method("focus_changed"): library_view.focus_changed(value and application_focused)
  controller_click_port = -1
  controller_release_elapsed = 0.0
  if is_instance_valid(perspective_box_view): perspective_box_view.set_scene_active(value)
@@ -1066,6 +1080,7 @@ func _focus_lost() -> void:
   library_view.cancel_pending_autostart()
  controller_click_active = false
  if is_instance_valid(controller_panel): controller_panel.focus_changed(false)
+ if is_instance_valid(library_view) and library_view.has_method("focus_changed"): library_view.focus_changed(false)
  controller_release_elapsed = 0.0
  entry_paused = entry_tween != null and entry_tween.is_running()
  if entry_paused: entry_tween.pause()
@@ -1082,6 +1097,7 @@ func _focus_lost() -> void:
 func _focus_returned() -> void:
  application_focused = true
  if is_instance_valid(controller_panel): controller_panel.focus_changed(scene_active)
+ if is_instance_valid(library_view) and library_view.has_method("focus_changed"): library_view.focus_changed(scene_active)
  controller_release_elapsed = 0.0
  if entry_paused and entry_tween and entry_tween.is_valid(): entry_tween.play()
  entry_paused = false
