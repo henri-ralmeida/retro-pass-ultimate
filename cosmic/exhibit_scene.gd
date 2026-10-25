@@ -3,6 +3,7 @@ extends Node3D
 ## configure(system, selected_item) retains the selected game's box/cartridge pairing.
 ## All dimensions are meters. Caller owns camera, light, UI and voluntary manipulation.
 const BoxScene = preload("res://cosmic/game_box.gd")
+const ControllerHomePicker = preload("res://cosmic/controller_home_picker.gd")
 const CableRouting = preload("res://cosmic/controller_cable.gd")
 const HardwareMedia = preload("res://cosmic/hardware_media.gd")
 const ControllerConnector = preload("res://cosmic/controller_connector.gd")
@@ -71,8 +72,10 @@ var layout_offset := Vector3.ZERO
 var hardware_art_missing := false
 var manual_available := false
 var configuration_errors: Array[String] = []
+var controller_home_picker = ControllerHomePicker.new()
 
 func _clear(item: Dictionary) -> void:
+ controller_home_picker.clear()
  _restore_dust_door()
  slot_surfaces.clear()
  slot_ready = false
@@ -385,6 +388,7 @@ func _controller(index: int, socket: Vector3, socket_outward: Vector3 = Vector3.
   return
  pad.name = "Controller%d" % (index+1)
  pad.set_meta("source_model",controller_path)
+ pad.set_meta("controller_port",index)
  add_child(pad)
  pad.position = Vector3(-0.095 if index == 0 else 0.115, 0, 0.105) + layout_offset
  pads.append(pad)
@@ -449,3 +453,17 @@ func _tube(points: PackedVector3Array) -> ArrayMesh:
     surface.add_vertex(vertex)
  surface.generate_normals()
  return surface.commit()
+
+func pick_controller(origin: Vector3, direction: Vector3) -> int:
+ # HOME picking uses the foremost rendered triangle, never a transparent AABB.
+ # Console is a sibling when configure_extras() is used, so include it explicitly.
+ if not is_visible_in_tree(): return -1
+ var roots: Array[Node3D] = [self]
+ if is_instance_valid(console): roots.append(console)
+ var hit: Dictionary = controller_home_picker.nearest_hit(roots,origin,direction)
+ if hit.is_empty(): return -1
+ var mesh: MeshInstance3D = hit.mesh
+ for pad in pads:
+  if is_instance_valid(pad) and (pad == mesh or pad.is_ancestor_of(mesh)):
+   return int(pad.get_meta("controller_port",-1))
+ return -1

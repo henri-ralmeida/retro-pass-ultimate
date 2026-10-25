@@ -1,6 +1,8 @@
 extends Node
 const InputProfile = preload("res://cosmic/input_profile.gd")
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
+const ControllerPanel = preload("res://cosmic/controller_mapping_panel.gd")
+const ControllerHomePicker = preload("res://cosmic/controller_home_picker.gd")
 ## Independent museum presentation. No ROM or emulator execution.
 signal system_selected(system_id: String)
 @export var systems: Array[Resource] = [preload("res://cosmic/master_system.tres")]
@@ -84,6 +86,24 @@ var entry_start_camera_target := Vector3.ZERO
 var entry_start_size := 0.28
 var entry_veil: ColorRect
 var entry_paused := false
+# Controller configuration is an exclusive modal, not a second HOME input path.
+var controller_panel
+var controller_picker = ControllerHomePicker.new()
+var controller_background_blocked := false
+var controller_release_gate := false
+var controller_release_elapsed := 0.0
+var controller_return_focus: Control
+var controller_return_settings := false
+var controller_saved_button_states: Dictionary = {}
+var controller_saved_pointer_states: Dictionary = {}
+var controller_history_paused := false
+var controller_click_active := false
+var controller_click_port := -1
+var controller_click_origin := Vector2.ZERO
+var controller_click_max_distance := 0.0
+var controller_last_event: InputEvent
+const CONTROLLER_CLICK_SLOP := 6.0
+const CONTROLLER_RELEASE_SECONDS := 0.15
 
 
 func _ready() -> void:
@@ -96,6 +116,15 @@ func _ready() -> void:
  add_child(perspective_box_view)
  _build_ui()
  if library_enabled: _build_library()
+ controller_panel = ControllerPanel.new()
+ controller_panel.name = "MasterSystemControllerSettings"
+ var controller_theme := Theme.new()
+ controller_theme.default_font = chakra
+ controller_panel.theme = controller_theme
+ ui.get_parent().add_child(controller_panel)
+ controller_panel.setup_host(input_profile)
+ controller_panel.title.add_theme_font_override("font",orbitron)
+ controller_panel.closed.connect(_controller_panel_closed)
  Input.joy_connection_changed.connect(_joy_connection_changed)
  var pads := Input.get_connected_joypads()
  if not pads.is_empty(): _set_input_device("gamepad",pads[0],Input.get_joy_name(pads[0]))
@@ -128,6 +157,8 @@ func _set_input_device(kind: String, device: int = -1, device_name: String = "")
   library_view.refresh_controls()
 
 func _joy_connection_changed(device: int, connected: bool) -> void:
+ # The modal owns its chosen device. Do not silently adopt another pad behind it.
+ if _controller_blocks_background(): return
  if connected and active_pad < 0:
   _set_input_device("gamepad",device,Input.get_joy_name(device))
  elif not connected and device == active_pad:
@@ -181,6 +212,7 @@ func _refresh_controls() -> void:
  if is_instance_valid(settings_message): _refresh_mapping_labels()
 
 func go_back() -> void:
+ if _controller_blocks_background(): return
  if library_state == "library":
   library_view.go_back()
   return
@@ -214,6 +246,16 @@ func _build_control_settings() -> void:
  column.add_theme_constant_override("separation",10)
  scroll.add_child(column)
  column.add_child(_label("Controles",orbitron,20,Color("eef3ff")))
+ column.add_child(_label("Master System · comandos do jogo",chakra,17,Color("eef3ff")))
+ for port in 2:
+  var sms_button := Button.new()
+  sms_button.name = "ConfigureSmsPlayer%d" % (port + 1)
+  sms_button.text = "Master System · Jogador %d" % (port + 1)
+  sms_button.accessibility_name = sms_button.text
+  sms_button.custom_minimum_size.y = 48
+  sms_button.pressed.connect(_open_controller_settings.bind(port,sms_button))
+  column.add_child(sms_button)
+ column.add_child(_label("Interface · navegação e apresentação",chakra,17,Color("eef3ff")))
  family_selector = OptionButton.new()
  family_selector.accessibility_name = "Símbolos do controle"
  family_selector.get_popup().window_input.connect(_family_popup_input)
@@ -283,6 +325,7 @@ func _refresh_mapping_labels() -> void:
  family_selector.tooltip_text = active_pad_name if not active_pad_name.is_empty() else "Sem controle identificado; escolha manual disponível"
 
 func toggle_control_settings() -> void:
+ if _controller_blocks_background(): return
  if not scene_active or not application_focused: return
  settings_panel.visible = not settings_panel.visible
  capture_action = ""
@@ -333,6 +376,7 @@ func _settings_input(event: InputEvent) -> bool:
  return false
 
 func _activate_focused_control() -> void:
+ if _controller_blocks_background(): return
  var focused := get_viewport().gui_get_focus_owner()
  if focused == console_button: confirm_selection("keyboard" if input_device=="keyboard" else "gamepad_mapping")
  elif focused is OptionButton: focused.show_popup()
@@ -708,6 +752,7 @@ func _update_hit_rect() -> void:
  console_button.size = (hi-lo)*ratio + Vector2(24,24)
 
 func navigate(direction: int) -> void:
+ if _controller_blocks_background(): return
  reset_dwell()
  if not scene_active or not application_focused or history_open or inspect_mode or transition_busy or systems.size() <= 1: return
  current_index = posmod(current_index+direction,systems.size())
@@ -722,6 +767,7 @@ func navigate(direction: int) -> void:
  transition.finished.connect(func(): transition_busy = false)
 
 func confirm_selection(source: String = "api") -> void:
+ if _controller_blocks_background(): return
  if not scene_active or not application_focused or settings_panel.visible or transition_busy or history_open or inspect_mode or cooldown > 0.0 or systems.is_empty() or library_state != "system":
   if "--trace-input" in OS.get_cmdline_user_args(): print("SELECTION_BLOCKED ",{"active":scene_active,"focused":application_focused,"settings":settings_panel.visible,"transition":transition_busy,"history":history_open,"inspect":inspect_mode,"cooldown":cooldown,"library":library_state,"source":source})
   return
@@ -778,6 +824,9 @@ func reset_dwell() -> void:
  dwell_elapsed = 0.0
 
 func _advance_dwell(delta: float) -> void:
+ if _controller_blocks_background() or controller_click_active:
+  reset_dwell()
+  return
  if library_state != "system":
   reset_dwell()
   return
@@ -799,6 +848,7 @@ func _settle_history_motion() -> void:
  _layout()
 
 func open_history(automatic: bool = false) -> void:
+ if _controller_blocks_background(): return
  if library_state != "system": return
  if history_open or inspect_mode or settings_panel.visible or not scene_active or not application_focused or transition_busy: return
  reset_dwell()
@@ -884,6 +934,7 @@ func close_inspection() -> void:
  _layout()
 
 func toggle_inspection() -> void:
+ if _controller_blocks_background(): return
  if library_state != "system": return
  if not scene_active or not application_focused: return
  if settings_panel.visible: return
@@ -938,6 +989,7 @@ func _inspection_input(event: InputEvent) -> bool:
  return false
 
 func toggle_motion() -> void:
+ if _controller_blocks_background(): return
  reduced_motion = not reduced_motion
  bg_material.set_shader_parameter("reduced_motion",reduced_motion)
  motion_button.tooltip_text = "Movimento reduzido: %s · M" % ("ligado" if reduced_motion else "desligado")
@@ -953,6 +1005,10 @@ func toggle_motion() -> void:
  _refresh_controls()
 
 func set_scene_active(value: bool) -> void:
+ if not value: controller_click_active = false
+ if is_instance_valid(controller_panel): controller_panel.focus_changed(value and application_focused)
+ controller_click_port = -1
+ controller_release_elapsed = 0.0
  if is_instance_valid(perspective_box_view): perspective_box_view.set_scene_active(value)
  if not value and library_state != "system": leave_library()
  scene_active = value
@@ -967,6 +1023,8 @@ func set_scene_active(value: bool) -> void:
   presentation.scale = Vector3.ONE
 
 func _pointer_left_window() -> void:
+ controller_click_port = -1
+ controller_click_max_distance = INF
  if library_view: library_view.cancel_drag()
  inspection_dragging = false
  hovering = false
@@ -974,6 +1032,9 @@ func _pointer_left_window() -> void:
 
 func _focus_lost() -> void:
  application_focused = false
+ controller_click_active = false
+ if is_instance_valid(controller_panel): controller_panel.focus_changed(false)
+ controller_release_elapsed = 0.0
  entry_paused = entry_tween != null and entry_tween.is_running()
  if entry_paused: entry_tween.pause()
  _pointer_left_window()
@@ -988,6 +1049,8 @@ func _focus_lost() -> void:
 
 func _focus_returned() -> void:
  application_focused = true
+ if is_instance_valid(controller_panel): controller_panel.focus_changed(scene_active)
+ controller_release_elapsed = 0.0
  if entry_paused and entry_tween and entry_tween.is_valid(): entry_tween.play()
  entry_paused = false
  inspection_dragging = false
@@ -998,7 +1061,20 @@ func _focus_returned() -> void:
  history_paused_for_focus = false
 
 func _input(event: InputEvent) -> void:
+ controller_last_event = event
  if not scene_active or not application_focused:
+  get_viewport().set_input_as_handled()
+  return
+ # A false route result allows the MODAL'S GUI only. Never fall through to HOME.
+ if is_instance_valid(controller_panel) and controller_panel.is_open():
+  if controller_panel.route_input(event): get_viewport().set_input_as_handled()
+  return
+ if controller_background_blocked or controller_release_gate:
+  if (event is InputEventKey and event.pressed) or (event is InputEventMouseButton and event.pressed) or (event is InputEventJoypadButton and event.pressed):
+   controller_release_elapsed = 0.0
+  get_viewport().set_input_as_handled()
+  return
+ if _controller_click_input(event):
   get_viewport().set_input_as_handled()
   return
  _observe_input_device(event)
@@ -1079,8 +1155,12 @@ func _input(event: InputEvent) -> void:
    navigate(-1 if event.axis_value < 0 else 1)
 
 func _process(delta: float) -> void:
- _update_perspective_box_frame()
  if not scene_active or not application_focused: return
+ if controller_release_gate:
+  _advance_controller_release_gate(delta,_controller_inputs_neutral())
+  return
+ if _controller_blocks_background(): return
+ _update_perspective_box_frame()
  if settings_panel.visible: return
  if library_state != "system":
   cooldown = maxf(0.0,cooldown-delta)
@@ -1101,6 +1181,160 @@ func _process(delta: float) -> void:
  bg_material.set_shader_parameter("parallax",Vector2.ZERO if reduced_motion else (get_viewport().get_mouse_position()/get_viewport().get_visible_rect().size-Vector2.ONE*0.5))
  presentation.position.y = 0.0 if reduced_motion or inspect_mode else sin(elapsed*0.7)*0.003
  fill_light.light_energy = lerpf(fill_light.light_energy,1.0 if hovering or console_button.has_focus() else 0.8,minf(delta*8,1.0))
+
+func _controller_blocks_background() -> bool:
+ return controller_background_blocked or controller_release_gate or (is_instance_valid(controller_panel) and controller_panel.is_open())
+
+func _set_background_blocked(value: bool) -> void:
+ controller_background_blocked = value
+ inspection_dragging = false
+ controller_click_port = -1
+ controller_click_active = false
+ hovering = false
+ axis_navigation_held = false
+ reset_dwell()
+ auto_history_armed = false
+ mouse_dwell_rearm_allowed = false
+ if is_instance_valid(library_view): library_view.cancel_drag()
+ if value:
+  controller_saved_button_states.clear()
+  controller_saved_pointer_states.clear()
+  var buttons: Array = footer.get_children()
+  buttons.append(console_button)
+  for button in buttons:
+   if button is BaseButton:
+    controller_saved_button_states[button] = button.disabled
+    controller_saved_pointer_states[button] = {"tooltip":button.tooltip_text,"mouse_filter":button.mouse_filter}
+    button.disabled = true
+    button.tooltip_text = ""
+    button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    # Godot 4.6's tooltip setter does not dismiss an already-open tooltip.
+    # Hide/show within this same frame invokes the public visibility cleanup,
+    # cancelling that owner's tooltip without touching model/camera or layout.
+    var was_visible: bool = button.visible
+    if was_visible:
+     button.hide()
+     button.show()
+  controller_history_paused = history_transition != null and history_transition.is_running()
+  if controller_history_paused: history_transition.pause()
+ else:
+  for button in controller_saved_button_states:
+   if is_instance_valid(button): button.disabled = controller_saved_button_states[button]
+  controller_saved_button_states.clear()
+  for button in controller_saved_pointer_states:
+   if is_instance_valid(button):
+    button.tooltip_text = controller_saved_pointer_states[button].tooltip
+    button.mouse_filter = controller_saved_pointer_states[button].mouse_filter
+  controller_saved_pointer_states.clear()
+  if controller_history_paused and scene_active and application_focused and history_transition and history_transition.is_valid():
+   history_transition.play()
+  controller_history_paused = false
+
+func _open_controller_settings(port: int, return_focus: Control = null, opening_event: InputEvent = null) -> void:
+ if port not in [0,1] or not scene_active or not application_focused or _controller_blocks_background(): return
+ if library_state != "system" or transition_busy or systems.is_empty(): return
+ if systems[current_index].system_id != "sega_master_system": return
+ controller_return_focus = return_focus if is_instance_valid(return_focus) else get_viewport().gui_get_focus_owner()
+ controller_return_settings = settings_panel.visible
+ # Hide the old settings without its toggle/focus side effects, retaining selection.
+ settings_panel.hide()
+ _set_background_blocked(true)
+ var gesture := opening_event if opening_event != null else controller_last_event
+ # Host restores focus only after its final release gate, not while keys are held.
+ if not controller_panel.open_player(port,null,gesture):
+  _set_background_blocked(false)
+  _restore_controller_focus()
+
+func _controller_panel_closed(_port: int) -> void:
+ controller_release_gate = true
+ controller_release_elapsed = 0.0
+ reset_dwell()
+
+func _controller_inputs_neutral() -> bool:
+ # The panel retains its ledger after closing, including the pinned device and
+ # opening gesture. Never let drift from an unrelated pad deadlock return.
+ if is_instance_valid(controller_panel): return controller_panel.release_inputs_neutral()
+ return not Input.is_anything_pressed()
+
+func _advance_controller_release_gate(delta: float, all_neutral: bool) -> void:
+ if not controller_release_gate: return
+ controller_release_elapsed = controller_release_elapsed + maxf(delta,0.0) if all_neutral else 0.0
+ if controller_release_elapsed < CONTROLLER_RELEASE_SECONDS: return
+ controller_release_gate = false
+ controller_release_elapsed = 0.0
+ _set_background_blocked(false)
+ if active_pad >= 0 and active_pad not in Input.get_connected_joypads(): _set_input_device("keyboard")
+ _restore_controller_focus()
+ cooldown = maxf(cooldown,0.4)
+
+func _restore_controller_focus() -> void:
+ settings_panel.visible = controller_return_settings
+ _refresh_controls()
+ if is_instance_valid(controller_return_focus) and controller_return_focus.is_visible_in_tree() and controller_return_focus.focus_mode != Control.FOCUS_NONE:
+  controller_return_focus.grab_focus()
+ elif settings_panel.visible: family_selector.grab_focus()
+ elif inspect_mode or history_open: inspect_button.grab_focus()
+ else: console_button.grab_focus()
+ # grab_focus emits existing dwell-arm callbacks: deliberately disarm AFTER it.
+ auto_history_armed = false
+ mouse_dwell_rearm_allowed = false
+ reset_dwell()
+ controller_return_focus = null
+ controller_return_settings = false
+
+func _controller_home_eligible() -> bool:
+ if not scene_active or not application_focused or _controller_blocks_background(): return false
+ if library_state != "system" or inspect_mode or inspection_dragging or history_open or history_blend > 0.001 or transition_busy: return false
+ if settings_panel.visible or (history_transition != null and history_transition.is_running()): return false
+ if is_instance_valid(entry_veil) and entry_veil.visible: return false
+ return is_instance_valid(exhibit) and exhibit.is_visible_in_tree() and is_instance_valid(camera)
+
+func _pick_home_controller(window_position: Vector2) -> int:
+ if not _controller_home_eligible(): return -1
+ var rect := viewport_container.get_global_rect()
+ if not rect.has_point(window_position) or rect.size.x <= 0.0 or rect.size.y <= 0.0: return -1
+ if viewport.size.x <= 1 or viewport.size.y <= 1: return -1
+ # Match this SubViewportContainer's stretched content, including window scale.
+ var local_point := viewport_container.get_global_transform_with_canvas().affine_inverse() * window_position
+ var point := local_point / viewport_container.size * Vector2(viewport.size)
+ # The approved perspective box is drawn in a different, composited viewport.
+ # Its REAL triangles occlude clicks here too; its transparent frame does not.
+ if is_instance_valid(perspective_box_view) and perspective_box_view.is_visible_in_tree() and is_instance_valid(perspective_box_view.box):
+  var box_rect: Rect2 = perspective_box_view.get_global_rect()
+  if box_rect.has_point(window_position) and box_rect.size.x > 0.0 and box_rect.size.y > 0.0:
+   var box_local: Vector2 = perspective_box_view.get_global_transform_with_canvas().affine_inverse() * window_position
+   var box_point: Vector2 = box_local / perspective_box_view.size * Vector2(perspective_box_view.viewport.size)
+   var box_camera: Camera3D = perspective_box_view.camera
+   if not controller_picker.nearest_hit([perspective_box_view.box],box_camera.project_ray_origin(box_point),box_camera.project_ray_normal(box_point),box_camera.far,box_camera.cull_mask).is_empty(): return -1
+ return exhibit.pick_controller(camera.project_ray_origin(point),camera.project_ray_normal(point))
+
+func _controller_click_input(event: InputEvent) -> bool:
+ if event is InputEventMouseMotion and controller_click_active:
+  controller_click_max_distance = maxf(controller_click_max_distance,event.position.distance_to(controller_click_origin))
+  if controller_click_max_distance > CONTROLLER_CLICK_SLOP: controller_click_port = -1
+  return true
+ if not event is InputEventMouseButton: return false
+ if event.button_index != MOUSE_BUTTON_LEFT:
+  if controller_click_active: controller_click_port = -1
+  return false
+ if event.pressed:
+  if controller_click_active: return true
+  var port := _pick_home_controller(event.position)
+  if port < 0: return false
+  controller_click_active = true
+  controller_click_port = -1 if event.double_click else port
+  controller_click_origin = event.position
+  controller_click_max_distance = 0.0
+  reset_dwell()
+  return true
+ if not controller_click_active: return false
+ var selected_port := controller_click_port
+ controller_click_active = false
+ controller_click_port = -1
+ controller_click_max_distance = maxf(controller_click_max_distance,event.position.distance_to(controller_click_origin))
+ if selected_port >= 0 and controller_click_max_distance <= CONTROLLER_CLICK_SLOP and _pick_home_controller(event.position) == selected_port:
+  _open_controller_settings(selected_port,null,event)
+ return true
 
 func _capture_sequence() -> void:
  get_window().size = Vector2i(1152,648)
@@ -1219,6 +1453,7 @@ func _build_library() -> void:
  entry_veil.hide()
 
 func enter_library() -> void:
+ if _controller_blocks_background(): return
  if library_state != "system" or not scene_active or not application_focused: return
  reset_dwell()
  auto_history_armed = false

@@ -20,6 +20,7 @@ Este repositório contém código-fonte, não um executável Windows já validad
 - R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
 - M: pausar/retomar movimento.
 - Escanear jogos, na biblioteca: escolher uma pasta para catálogo local. Não executa arquivos, não altera a coleção e não faz consultas online sem integração configurada. Capas locais explicitamente associadas preenchem cada face disponível.
+- Clique no controle3D P1/P2 para configurar seus comandos, ou use F1 → Master System → Jogador. O modelo e a lista textual selecionam a mesma ação. Veja [configuração contextual](docs/CONFIGURACAO_CONTROLE_3D.md).
 - F1 / Controles, na tela do console: escolher família de símbolos e remapear teclas/botões; configuração persiste localmente. Conflitos trocam as duas ações, sem apagar um comando. Restaurar controles padrão desfaz remapeamentos e a escolha manual de símbolos.
 - Controle: posição oeste (Xbox X / PlayStation quadrado) inspeciona; sul confirma e leste volta. Nomes ambíguos mostram posições genéricas, sem adivinhar hardware. A seleção manual de família altera símbolos, não identidade detectada.
 - Permanecer no console por oito segundos elegíveis abre a história; não interrompe inspeção.
@@ -76,3 +77,5 @@ Não incluir jogos, saves, credenciais, caches, builds ou mídias pessoais neste
 ## Próximos incrementos de configuração
 
 Tour inicial opcional para escolher o Master System, uma pasta local e categorias de mídia desejadas (capas, imagens, wheel e manual), com opção de pular e configurar depois. A fila deve distinguir importação/processamento local de download e contar arquivos de mídia, não presumir um arquivo por jogo. Essas telas e a obtenção online ainda não estão implementadas. Nenhum fluxo baixa ROMs.
+
+Revisão do controle 3D: corrigido fechamento inesperado após clicar Voltar durante Testar entradas e salvar depois. Cobertura adicional de layout P1/P2/conflitos em 16:9 e 4:3; o visual/modelo aprovado permanece inalterado. Windows e gamepads físicos continuam pendentes.
