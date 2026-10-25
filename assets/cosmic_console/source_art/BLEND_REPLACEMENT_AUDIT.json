@@ -1,0 +1,69 @@
+{
+  "mesh_normal_uv_transform_hash_before": "61f12e259e7625d256c5ca6bd7f386dcfe0683156a209c5c5b932c4a25bde035",
+  "mesh_normal_uv_transform_hash_after_reopen": "61f12e259e7625d256c5ca6bd7f386dcfe0683156a209c5c5b932c4a25bde035",
+  "geometry_normals_uvs_transforms_unchanged": true,
+  "packed_images": [
+    {
+      "name": "abs_grain_normal",
+      "size": [
+        512,
+        512
+      ],
+      "users": 2,
+      "filepath": "//../MasterSystem_Console_SMS_Assembly_abs_grain_normal.png",
+      "packed": true,
+      "packed_source_paths": [
+        "//../MasterSystem_Console_SMS_Assembly_abs_grain_normal.png"
+      ],
+      "packed_sha256": "3849a2f3313c6ff8e231f31e05df0bf72bc3e7eb4767f10f50a71c49c65597c5"
+    },
+    {
+      "name": "master_system_atlas_4k",
+      "size": [
+        4096,
+        4096
+      ],
+      "users": 6,
+      "filepath": "//../source_art/raster/master_system_atlas_4k.png",
+      "packed": true,
+      "packed_source_paths": [
+        "//../source_art/raster/master_system_atlas_4k.png"
+      ],
+      "packed_sha256": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c"
+    },
+    {
+      "name": "master_system_wordmark_4k",
+      "size": [
+        4096,
+        336
+      ],
+      "users": 1,
+      "filepath": "//../source_art/raster/master_system_wordmark_4k.png",
+      "packed": true,
+      "packed_source_paths": [
+        "//../source_art/raster/master_system_wordmark_4k.png"
+      ],
+      "packed_sha256": "a0dbaf4ae4c0f973b3f5648f85f996ae420bf1a8c1b2cc96facb12a4546f944d"
+    }
+  ],
+  "unused_photographs_removed": true,
+  "reopened_saved_blend": true,
+  "path_only_relocation": {
+    "changes": [
+      {
+        "image": "master_system_atlas_4k",
+        "old_filepath": "//../source_art/raster/master_system_atlas_4k.png",
+        "new_filepath": "//../source_art/raster/master_system_atlas_4k.png"
+      },
+      {
+        "image": "master_system_wordmark_4k",
+        "old_filepath": "//../source_art/raster/master_system_wordmark_4k.png",
+        "new_filepath": "//../source_art/raster/master_system_wordmark_4k.png"
+      }
+    ],
+    "geometry_hash_before": "61f12e259e7625d256c5ca6bd7f386dcfe0683156a209c5c5b932c4a25bde035",
+    "geometry_hash_after_reopen": "61f12e259e7625d256c5ca6bd7f386dcfe0683156a209c5c5b932c4a25bde035",
+    "packed_hashes_unchanged": true,
+    "saved_blend_sha256": "43c6568b9962b90a46a6225207bd93c4cee21a57a2eee9b87b6d682accfce0df"
+  }
+}

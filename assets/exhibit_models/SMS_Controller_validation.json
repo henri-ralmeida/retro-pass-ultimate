@@ -1,0 +1,45 @@
+{
+  "anchor_basis_x_points_departure": true,
+  "anchor_at_relief_tip": true,
+  "source_sha256": "4db15c655356159bf9ac531bbccabae321d415022bdff166c6706368ff582028",
+  "output_sha256": "fd8ad50194ef1770ce79e9e187a50e0c7de05848fd21da2ace59efcc3c76642b",
+  "output_bytes": 279736,
+  "mesh_count": 22,
+  "triangles": 6832,
+  "images": 0,
+  "textures": 0,
+  "finite_positions": true,
+  "valid_index_bounds": true,
+  "source_preserved": true,
+  "removed_photo_planes": [
+    "Pad_direction_frame_print",
+    "Pad_SEGA_and_button_print"
+  ],
+  "units": "meters; glTF/Godot Y up",
+  "shell_width": 0.1071,
+  "shell_depth": 0.0441,
+  "shell_min_y": 0.001,
+  "max_y": 0.0178,
+  "cable_anchor": [
+    0.011,
+    0.010500014,
+    -0.0265
+  ],
+  "cable_departure_direction": [
+    0,
+    0,
+    -1
+  ],
+  "relief_translation": [
+    0.011,
+    0.010500014,
+    -0.0235
+  ],
+  "relief_and_anchor_rotation_xyzw": [
+    0,
+    0.7071067811865476,
+    0,
+    0.7071067811865476
+  ],
+  "correction": "Rear entry verified from supplied photo; X=.011m is estimated from perspective, not a measured dimension. Mesh vertices and materials preserved."
+}

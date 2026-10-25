@@ -7,3 +7,32 @@
 .env
 .env.*
 !.env.example
+
+# Builds e arquivos locais
+/build/
+/dist/
+*.tmp
+*.log
+*.blend1
+
+# Evidências geradas; manter apenas o diretório necessário aos testes.
+/evidence/*
+!/evidence/cosmic/
+/evidence/cosmic/*
+!/evidence/cosmic/.gitkeep
+
+# Experimentos locais, fora da implementação.
+/assets/cosmic_console/repair/
+/tools/text_diagnostics/
+
+!/evidence/.gdignore
+
+# Artes locais de jogos: carregadas por manifesto, não redistribuídas no repositório.
+/assets/local_box_art/
+
+# Python build caches
+__pycache__/
+*.py[cod]
+
+# Private original hardware artwork; not cleared for public redistribution.
+/assets/local_hardware_art/

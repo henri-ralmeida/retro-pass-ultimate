@@ -1,0 +1,120 @@
+{
+  "source": "assets/sms/SMS_Assembly.glb",
+  "source_sha256": "4db15c655356159bf9ac531bbccabae321d415022bdff166c6706368ff582028",
+  "blender_original_found": false,
+  "editable_blend_origin": "Imported unchanged meshes/materials from supplied GLB; not original authoring modifiers",
+  "excluded_presentation": [
+    "controller",
+    "cartridge",
+    "box",
+    "Controller_cable"
+  ],
+  "mesh_objects": 184,
+  "triangles": 29458,
+  "materials": [
+    "ABS_molded_black",
+    "ABS_satin_bezel",
+    "CARD_vector_print",
+    "CONTROL_vector_print",
+    "Console_logo_vector_RGBA",
+    "POWER_vector_print",
+    "Printed_red",
+    "Rubber",
+    "SMS_PORT_NICKEL",
+    "SMS_PORT_PLASTIC",
+    "SMS_PORT_RECESS",
+    "Socket_dark",
+    "Socket_metal",
+    "Vector_print_button_print",
+    "Vector_print_cartridge_header",
+    "Vector_print_information_panel"
+  ],
+  "dimensions_m_blender": [
+    0.36879998445510864,
+    0.1871500089764595,
+    0.06000000610947609
+  ],
+  "bounds_centered_blender": [
+    [
+      -0.18439999222755432,
+      -0.09357500821352005,
+      -0.030000003054738045
+    ],
+    [
+      0.18439999222755432,
+      0.09357500076293945,
+      0.030000003054738045
+    ]
+  ],
+  "front_axis_blender": "-Y",
+  "front_axis_godot": "+Z",
+  "up_blender": "+Z",
+  "up_godot": "+Y",
+  "camera_godot_example": [
+    0.42,
+    0.36,
+    0.56
+  ],
+  "images": [
+    {
+      "name": "abs_grain_normal",
+      "size": [
+        512,
+        512
+      ],
+      "users": 2,
+      "filepath": "//../MasterSystem_Console_SMS_Assembly_abs_grain_normal.png",
+      "packed": true,
+      "packed_source_paths": [
+        "//../MasterSystem_Console_SMS_Assembly_abs_grain_normal.png"
+      ],
+      "packed_sha256": "3849a2f3313c6ff8e231f31e05df0bf72bc3e7eb4767f10f50a71c49c65597c5"
+    },
+    {
+      "name": "master_system_atlas_4k",
+      "size": [
+        4096,
+        4096
+      ],
+      "users": 6,
+      "filepath": "//../source_art/raster/master_system_atlas_4k.png",
+      "packed": true,
+      "packed_source_paths": [
+        "//../source_art/raster/master_system_atlas_4k.png"
+      ],
+      "packed_sha256": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c"
+    },
+    {
+      "name": "master_system_wordmark_4k",
+      "size": [
+        4096,
+        336
+      ],
+      "users": 1,
+      "filepath": "//../source_art/raster/master_system_wordmark_4k.png",
+      "packed": true,
+      "packed_source_paths": [
+        "//../source_art/raster/master_system_wordmark_4k.png"
+      ],
+      "packed_sha256": "a0dbaf4ae4c0f973b3f5648f85f996ae420bf1a8c1b2cc96facb12a4546f944d"
+    }
+  ],
+  "texture_restoration": "Replaced photographic decal images with newly drawn vector artwork rendered at 4K. Removed all unused packed images. Reopened and hashed unchanged geometry/normals/UVs/transforms.",
+  "proof_render": "Blender Cycles 64 samples CPU, no denoise; NOT Godot evidence",
+  "inscription_audit": "../source_art/BLEND_REPLACEMENT_AUDIT.json",
+  "card_recess_repair": {
+    "date_utc": "2026-10-25",
+    "audit": "CARD_RECESS_REPAIR_AUDIT.json",
+    "script": "repair_card_recess.py",
+    "reference": "https://iansretromuseum.co.uk/consoles/mastersystem/gfx1/l10.jpg",
+    "changes": "Added a continuous inner floor and a sloped rear guide; split the fascia seam at the recess. Existing shell, mesh topology, normals, UVs, materials and 4K image bytes preserved; only the seam transform is shortened.",
+    "slot_height_m": 0.00235,
+    "limits": "Original visual reconstruction fitted to the existing model, not measured CAD. A real recessed card slit remains. Reference photo pixels are not included.",
+    "bounds_unchanged": true,
+    "new_geometry_objects": [
+      "Card_slot_recess_floor",
+      "Card_slot_rear_guide",
+      "Front_parting_seam_card_right"
+    ]
+  }
+}

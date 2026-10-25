@@ -1,0 +1,67 @@
+INSCRIÇÕES DO MASTER SYSTEM POWER BASE — RECONSTRUÇÃO VETORIAL
+Revisão: 24 de outubro de 2026.
+
+O que foi reconstruído
+- Atlas funcional novo, desenhado com formas vetoriais e contornos de fontes:
+  CARTRIDGE INPUT, RESET, PAUSE, CARTRIDGE, CARD, CONTROL 1, CONTROL 2,
+  POWER ON, TV SYSTEM, POWER e CARD INPUT, quadros, setas e faixa diagonal.
+- O desenho respeita a disposição do aparelho e os UVs existentes. É uma
+  reconstrução visual, não uma réplica de engenharia ou fonte fabril certificada.
+- A textura anterior era uma fotografia da loja J&L Game; o letreiro anterior
+  console_logo_rgba também era derivado dela. Nenhum pixel desses dois arquivos
+  foi copiado, ampliado, retocado, vetorizado automaticamente ou incorporado aos
+  novos arquivos. A fotografia foi consultada apenas para ler os rótulos e conferir
+  disposição. Não está incluída nesta pasta nem no GLB/Blend atualizado.
+- A geometria original, normais, UVs, hierarquia, transformações e mapa normal
+  procedural foram preservados. Só imagens e nomes descritivos dos materiais
+  impressos foram substituídos.
+
+Marca SEGA
+- Autor da marca: SEGA.
+- Vetor obtido em 24/10/2026:
+  https://commons.wikimedia.org/wiki/File:SEGA_logo.svg
+- Arquivo original conferido:
+  https://upload.wikimedia.org/wikipedia/commons/1/13/SEGA_logo.svg
+- A página registra a categoria PD-textlogo e aviso de proteção de marca.
+  Isso NÃO constitui autorização comercial da SEGA nem elimina direitos de marca.
+- O original recebido está em SEGA_logo_original.svg, com SHA256 registrado em
+  ART_MANIFEST.json. Os paths da marca foram mantidos; removida a silhueta branca
+  de fundo e alterada a tinta azul/preta para branco para o decalque transparente.
+  Não foram inventadas letras SEGA com uma fonte genérica.
+
+Tipografia
+- Rótulos funcionais: Liberation Sans Regular.
+- MASTER SYSTEM/Power Base: Liberation Serif Bold, ajustada horizontalmente à
+  área existente. É uma APROXIMAÇÃO TIPOGRÁFICA declarada, não a fonte fabril
+  original identificada. O nome e a capitalização foram mantidos.
+- Fontes distribuídas sem modificação em fonts/, sob SIL Open Font License 1.1.
+  Copyrights e licença completos em fonts/LICENSE-Liberation.txt.
+- Projeto oficial: https://github.com/liberationfonts/liberation-fonts
+
+Fontes editáveis e reprodução
+- build_vector_art.py contém textos, dimensões, cores, geometria e mapeamento UV.
+- SVGs individuais permitem editar os componentes; master_system_atlas_4k.svg
+  é o atlas final; master_system_wordmark_4k.svg é a inscrição branca.
+- As letras estão em contornos vetoriais com título/aria-label e fontes incluídas,
+  evitando substituição de fonte ao abrir o SVG. Para editar o conteúdo textual,
+  alterar a string em build_vector_art.py e regenerar.
+- Execução: python build_vector_art.py (requer fontTools e Inkscape).
+- Saídas: raster/master_system_atlas_4k.png (4096 x 4096 RGBA) e
+  raster/master_system_wordmark_4k.png (4096 x 336 RGBA transparente).
+- Os PNGs canônicos ficam em source_art/raster, ignorada pelo Godot via .gdignore.
+  Em runtime, Godot importa somente as cópias extraídas do GLB na raiz do asset,
+  evitando duas importações das mesmas imagens 4K. O atlas tem size_limit=2048
+  no importador de runtime, com compressão Lossless e mipmaps; fontes 4K intactas.
+- replace_glb_art.py INPUT_ORIGINAL.glb OUTPUT.glb reempacota os bufferViews,
+  substituindo as imagens sem reexportar ou retesselar geometria.
+- update_blend_art.py é executado pelo Blender para atualizar imagens empacotadas,
+  remover todas as imagens órfãs e conferir o arquivo salvo após reabertura.
+- Os originais e backups de segurança permanecem fora deste repositório.
+
+Verificação
+- ART_MANIFEST.json: fontes e hashes das novas texturas.
+- GLB_REPLACEMENT_AUDIT.json: imagem antiga ausente, hashes e buffers preservados.
+- BLEND_REPLACEMENT_AUDIT.json: lista exata de imagens packed após salvar/reabrir
+  e igualdade de hash de geometria, normais, UVs e transformações.
+- Os renders Blender são somente conferência visual offline, não capturas Godot.
+  A validação de execução no Godot é separada.

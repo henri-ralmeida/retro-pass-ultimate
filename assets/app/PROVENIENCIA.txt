@@ -1,0 +1,7 @@
+RETRO PASS ULTIMATE — ícone do aplicativo
+
+O PNG foi criado durante o desenvolvimento deste projeto, por modelagem e renderização procedural de um controle 3D, sem imagens ou texturas externas. A direção visual partiu do ícone anterior fornecido para o projeto. O ICO deriva desse PNG e contém múltiplas resoluções para Windows.
+
+SHA256 do PNG: 878bf8ef1ab786387ee83c396cb7ac0912dd6d952b27e6707ab2abc91614f3ee.
+
+Esta nota documenta a procedência do asset; não atribui uma licença geral ao repositório nem concede direitos sobre marcas de terceiros.

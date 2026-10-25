@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="CosmicSystemData" load_steps=4 format=3]
+[ext_resource type="Script" path="res://cosmic/system_data.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/cosmic_console/MasterSystem_Console_Render.tscn" id="2"]
+[ext_resource type="Texture2D" path="res://assets/system_logos/Sega_Master_System.png" id="3"]
+[resource]
+script = ExtResource("1")
+system_id = "sega_master_system"
+display_name = "Master System"
+subtitle = "SEGA  /  CONSOLE"
+logo = ExtResource("3")
+logo_source = "https://commons.wikimedia.org/wiki/File:Sega-master-system-logo.png"
+model = ExtResource("2")
+camera_position = Vector3(0.42, 0.36, 0.56)
+framing_size = 0.28
+
+history_text = "A história do Master System começa no Japão, com o Sega Mark III, lançado em 20 de outubro de 1985. No ano seguinte, a Sega redesenhou o aparelho para o mercado internacional: surgia o Master System, também identificado como Power Base, com o visual preto e vermelho representado aqui.\n\nA família combinava jogos em cartuchos e cartões, além de acessórios que ampliavam as possibilidades de jogar. É importante distinguir as versões: o Master System japonês chegou em 1987 com som FM integrado e conexão direta para os óculos 3-D, recursos que não estavam presentes da mesma forma no Power Base de exportação.\n\nNo Brasil, a Tectoy lançou o Master System em 1989. O console ganhou um lugar especial na memória de quem descobriu os videogames naquela época: ligar a televisão, encaixar o cartucho e transformar a sala em uma nova aventura."
+history_credits = "Texto original para RETRO PASS ULTIMATE. Referências históricas: Sega e Tectoy. Marcas pertencem aos respectivos titulares."
+history_sources = PackedStringArray("https://www.sega.jp/history/hard/segamark3/index.html", "https://www.sega.jp/history/hard/mastersystem/", "https://www.loja.tectoy.com.br/quem-somos/")
