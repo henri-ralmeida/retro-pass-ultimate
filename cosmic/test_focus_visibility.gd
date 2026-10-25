@@ -7,6 +7,7 @@ func check(ok: bool, message: String) -> void:
 func _initialize() -> void: run.call_deferred()
 func run() -> void:
  var scene = load("res://cosmic/main.tscn").instantiate()
+ scene.library_enabled = false # Standalone selector fixture; route covered by test_library.gd.
  root.add_child(scene)
  await process_frame
  scene.set_process(false)

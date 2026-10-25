@@ -36,6 +36,7 @@ func _initialize() -> void: run.call_deferred()
 func run() -> void:
  DirAccess.remove_absolute(ProjectSettings.globalize_path(FIXTURE))
  scene = load("res://cosmic/main.tscn").instantiate()
+ scene.library_enabled = false # Standalone selector fixture; route covered by test_library.gd.
  scene.input_profile = Profile.new()
  scene.input_profile.config_path = FIXTURE
  root.add_child(scene)

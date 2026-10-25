@@ -1,10 +1,10 @@
 # RETRO PASS ULTIMATE
 ## Sistemas no Infinito · protótipo Master System
 
-Projeto-fonte Godot, não um executável Windows exportado. Contém somente o Master System, sem ROM, emulação ou biblioteca de jogos conectada.
+Projeto-fonte Godot, não um executável Windows exportado. Contém somente o Master System e uma biblioteca conceitual de caixas 3D fictícias, sem ROM, emulação ou biblioteca pessoal conectada.
 
 ### Abrir
-1. Extraia em uma pasta nova, sem sobrepor o projeto anterior.
+1. Clone o repositório ou atualize a branch `feature/master-system`, sem sobrepor arquivos locais não versionados.
 2. Importe `project.godot` no Godot **4.6.3** e pressione F5.
 3. O renderizador é **Compatibility**; a cena inicial é `cosmic/main.tscn`.
 O Blender não precisa estar instalado para executar, pois a apresentação carrega o GLB.
@@ -22,11 +22,11 @@ Rodapé contextual do estudo **09 (ES-DE)**: indicador circular de tecla e rótu
 
 Apenas o logotipo do Master System aparece abaixo do console, sem repetir seu nome em texto. O nome interno e acessível permanece preservado. A marca do aplicativo é **RETRO PASS ULTIMATE**, com espaços, sem barra.
 
-Hover não seleciona, inicia mídia ou emulação. A confirmação retorna “biblioteca ainda não conectada”. Não abre o quarto.
+Hover não seleciona, inicia mídia ou emulação. A confirmação aproxima a câmera e entra na biblioteca conceitual 3D. Não abre o quarto nem executa jogos.
 
 ### Integração e dados
 `cosmic/system_data.gd` declara identificador, nome, subtítulo, modelo, transformação, câmera/enquadramento, `logo: Texture2D`, `logo_source`, `history_text`, `history_credits` e `history_sources`. `cosmic/master_system.tres` é o único registro real.
-Contrato: sinal `system_selected(system_id: String)`, payload `sega_master_system`. Conecte esse sinal à biblioteca em uma etapa futura. Cooldown de 400 ms, rejeição de repetição automática de tecla e proteção no retorno de foco evitam ações duplicadas/carregadas.
+Contrato: sinal `system_selected(system_id: String)`, payload `sega_master_system`. A rota visual da biblioteca consome a seleção; as capas são estudos fictícios, não edições comerciais. Cooldown de 400 ms, rejeição de repetição automática de tecla e proteção no retorno de foco evitam ações duplicadas/carregadas.
 Nome textual só serve como fallback visual quando um sistema não possui logo. A navegação, câmera e logo são orientados por dados, sem condições específicas por console no controlador.
 
 ### Visual e movimento
@@ -38,7 +38,7 @@ Ajustes no shader: `motion_speed`, `star_density`, `nebula_brightness`, `comets_
 - `assets/cosmic_console/MasterSystem_Console.glb`: console com imagens embutidas.
 - `assets/cosmic_console/source_blender/MasterSystem_Console_EDITABLE.blend`: editável com texturas empacotadas, Blender 4.3.2.
 - `MODEL_AUDIT.json` nessa pasta: geometria e rastreabilidade.
-O `.blend` autoral não foi localizado. O editável resulta da importação fiel do GLB fornecido, sem recuperar histórico original de modificadores. Não houve remodelagem, simplificação ou novas subdivisões. Dimensões 0,3688×0,0600×0,18715 m, 181 meshes, 29.054 triângulos, 16 materiais. Acessórios e originais permanecem preservados fora desta apresentação.
+O editável atual contém a geometria do protótipo, as inscrições vetoriais próprias e a correção do rebaixo Sega Card. A correção acrescenta piso e guia internos sem copiar a fotografia física de referência; preserva os buffers anteriores, texturas e limites externos. O GLB atual tem 184 meshes e 29.458 triângulos. Consulte `MODEL_AUDIT.json` e `CARD_RECESS_REPAIR_AUDIT.json` para os hashes e detalhes. Backups anteriores permanecem fora do repositório.
 
 Logotipo: PNG original 1000×300, sem redesenhar, recolorir ou substituir por fonte; atribuído à Sega no [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Sega-master-system-logo.png). `assets/system_logos/PROVENIENCIA.txt` registra hash, fonte e ressalva de trademark. A classificação PD-textlogo da fonte não constitui autorização comercial da Sega. O SVG popular fan-made com fonte incorreta foi evitado.
 Fontes Orbitron e Chakra Petch obtidas do repositório oficial Google Fonts, com licenças OFL locais. A geometria e o ícone do aplicativo foram construídos durante o projeto; a procedência e os elementos de marca estão documentados junto aos assets. Ícones anteriores preservados nos assets, sem uso na UI atual.

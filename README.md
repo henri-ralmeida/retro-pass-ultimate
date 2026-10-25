@@ -1,6 +1,6 @@
 # RETRO PASS ULTIMATE
 
-Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual é **Sistemas no Infinito**: um Master System 3D em fundo cósmico, com inspeção interativa e história do console. Substitui a proposta inicial de quarto 3D registrada no primeiro commit.
+Protótipo desktop em Godot 4.6.3, inicialmente para Windows. A direção atual é **Sistemas no Infinito**: um Master System 3D em fundo cósmico, com inspeção interativa, história do console e entrada animada em uma biblioteca 3D conceitual. Substitui a proposta inicial de quarto 3D registrada no primeiro commit.
 
 ## Executar
 
@@ -12,19 +12,19 @@ Este repositório contém código-fonte, não um executável Windows já validad
 
 ## Interações
 
-- X confirma e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.
+- X entra no sistema e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.
 - I / Inspecionar: manipulação 3D separada da história.
 - Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
 - R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
 - M: pausar/retomar movimento.
-- F1 / Controles: escolher família de símbolos e remapear teclas/botões; configuração persiste localmente. Conflitos trocam as duas ações, sem apagar um comando. Restaurar controles padrão desfaz remapeamentos e a escolha manual de símbolos.
+- F1 / Controles, na tela do console: escolher família de símbolos e remapear teclas/botões; configuração persiste localmente. Conflitos trocam as duas ações, sem apagar um comando. Restaurar controles padrão desfaz remapeamentos e a escolha manual de símbolos.
 - Controle: posição oeste (Xbox X / PlayStation quadrado) inspeciona; sul confirma e leste volta. Nomes ambíguos mostram posições genéricas, sem adivinhar hardware. A seleção manual de família altera símbolos, não identidade detectada.
 - Permanecer no console por oito segundos elegíveis abre a história; não interrompe inspeção.
 - Perder foco preserva a imagem e o estado, cancelando o arraste.
 
 ## Escopo atual
 
-Somente Master System. Sem ROMs, emulação, biblioteca conectada ou integração RetroAchievements. A seleção emite um sinal preparado para integração futura. Nenhuma homologação Hardcore é alegada.
+Somente Master System. Entrar aproxima a câmera do console e revela uma biblioteca de caixas 3D fictícias, com frente, lombada e verso. Alex Kidd e Wonder Boy identificam estudos visuais originais, não capas oficiais nem edições comerciais específicas. Não há ROMs, execução de jogos, biblioteca pessoal conectada ou integração RetroAchievements. Nenhuma homologação Hardcore é alegada. Movimento reduzido troca de cena sem a animação de entrada; Voltar cancela a transição ou retorna ao console.
 
 ## Testes
 
@@ -36,6 +36,9 @@ Execute no diretório do projeto, por exemplo:
     godot --headless --path . --script cosmic/test_focus_visibility.gd
     godot --headless --path . --script cosmic/test_controls.gd
     godot --headless --path . --script cosmic/test_controls_propagation.gd
+    godot --headless --path . --script cosmic/test_library.gd
+    godot --headless --path . --script cosmic/test_library_view.gd
+    godot --headless --path . --script cosmic/test_library_propagation.gd
     godot --headless --path . --script cosmic/test_zoom_stress.gd
 
 Em Linux/macOS, `bash tools/verify_project.sh` executa a importação, a suíte e a auditoria de imagens antigas em sequência.

@@ -58,6 +58,7 @@ func run() -> void:
   _finish()
   return
  var scene = packed.instantiate()
+ scene.library_enabled = false # Standalone selector fixture; route covered by test_library.gd.
  root.add_child(scene)
  await process_frame
  # Avoid frame time and window focus events influencing the simulated clock.

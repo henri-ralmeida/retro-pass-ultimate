@@ -42,6 +42,7 @@ func run() -> void:
  check(profile.keys.inspect==KEY_X and profile.keys.confirm==KEY_I,"Conflicting remap swaps actions without losing inspection")
  check(not profile.rebind("confirm",-1,true),"Invalid pad code rejected")
  var scene = load("res://cosmic/main.tscn").instantiate()
+ scene.library_enabled = false # Standalone selector fixture; route covered by test_library.gd.
  scene.input_profile = Profile.new()
  scene.input_profile.config_path="res://evidence/cosmic/controls_fixture.cfg"
  root.add_child(scene)

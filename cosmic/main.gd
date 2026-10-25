@@ -1,7 +1,7 @@
 extends Node
 const InputProfile = preload("res://cosmic/input_profile.gd")
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
-## Independent presentation prototype. No ROM, media, achievement or library operations.
+## Independent museum presentation. No ROM or emulator execution.
 signal system_selected(system_id: String)
 @export var systems: Array[Resource] = [preload("res://cosmic/master_system.tres")]
 @export var dwell_seconds := 8.0
@@ -70,6 +70,15 @@ var chakra: Font = preload("res://assets/fonts/ChakraPetch-Regular.ttf")
 var transition: Tween
 var last_input_source := ""
 var model_bounds := AABB()
+@export var library_enabled := true
+var library_state := "system"
+var library_view
+var entry_tween: Tween
+var entry_progress := 0.0
+var entry_start_size := 0.28
+var entry_veil: ColorRect
+var entry_paused := false
+
 
 func _ready() -> void:
  input_profile.load_settings()
@@ -77,6 +86,7 @@ func _ready() -> void:
  _build_background()
  _build_3d()
  _build_ui()
+ if library_enabled: _build_library()
  Input.joy_connection_changed.connect(_joy_connection_changed)
  var pads := Input.get_connected_joypads()
  if not pads.is_empty(): _set_input_device("gamepad",pads[0],Input.get_joy_name(pads[0]))
@@ -89,6 +99,7 @@ func _ready() -> void:
  _layout()
  console_button.grab_focus()
  if "--qa-4-3" in OS.get_cmdline_user_args(): _qa_four_three.call_deferred()
+ if "--qa-16-9" in OS.get_cmdline_user_args(): _qa_sixteen_nine.call_deferred()
  if "--capture-inspection" in OS.get_cmdline_user_args(): _capture_inspection.call_deferred()
  if "--capture-cosmic" in OS.get_cmdline_user_args(): _capture_sequence.call_deferred()
  if "--capture-motion" in OS.get_cmdline_user_args(): _capture_motion.call_deferred()
@@ -103,6 +114,9 @@ func _set_input_device(kind: String, device: int = -1, device_name: String = "")
  axis_navigation_held = false
  reset_dwell()
  if is_instance_valid(footer): _refresh_controls()
+ if is_instance_valid(library_view):
+  library_view.cancel_drag()
+  library_view.refresh_controls()
 
 func _joy_connection_changed(device: int, connected: bool) -> void:
  if connected and active_pad < 0:
@@ -158,6 +172,12 @@ func _refresh_controls() -> void:
  if is_instance_valid(settings_message): _refresh_mapping_labels()
 
 func go_back() -> void:
+ if library_state == "library":
+  library_view.go_back()
+  return
+ if library_state != "system":
+  leave_library()
+  return
  if settings_panel.visible: toggle_control_settings()
  elif inspect_mode: close_inspection()
  elif history_open: close_history()
@@ -514,6 +534,9 @@ func _layout() -> void:
   history_panel.modulate.a = history_blend
  bg_material.set_shader_parameter("aspect",s.x/maxf(s.y,1.0))
  _frame_model()
+ if library_view: library_view.layout()
+ if entry_veil: entry_veil.size = s
+ if library_state == "entering": _apply_entry(entry_progress)
 
 func _frame_model() -> void:
  if systems.is_empty() or not camera: return
@@ -572,6 +595,7 @@ func _collect_bounds(node: Node3D) -> AABB:
  return result
 
 func _update_hit_rect() -> void:
+ if library_state != "system": return
  if inspect_mode: return
  if not model or viewport.size.x <= 1 or viewport.size.y <= 1: return
  var lo := Vector2(INF,INF)
@@ -599,17 +623,20 @@ func navigate(direction: int) -> void:
  transition.finished.connect(func(): transition_busy = false)
 
 func confirm_selection(source: String = "api") -> void:
- if not scene_active or not application_focused or settings_panel.visible or transition_busy or history_open or inspect_mode or cooldown > 0.0 or systems.is_empty(): return
+ if not scene_active or not application_focused or settings_panel.visible or transition_busy or history_open or inspect_mode or cooldown > 0.0 or systems.is_empty() or library_state != "system":
+  if "--trace-input" in OS.get_cmdline_user_args(): print("SELECTION_BLOCKED ",{"active":scene_active,"focused":application_focused,"settings":settings_panel.visible,"transition":transition_busy,"history":history_open,"inspect":inspect_mode,"cooldown":cooldown,"library":library_state,"source":source})
+  return
  reset_dwell()
  auto_history_armed = false
  cooldown = 0.4
  selection_count += 1
  last_input_source = source
  var id: String = systems[current_index].system_id
- status.text = "Sistema selecionado · biblioteca ainda não conectada"
+ status.text = "Entrando na biblioteca conceito · sem execução de jogos"
  status.add_theme_color_override("font_color",Color("c9b385"))
  print("COSMIC_SELECTION id=%s count=%d source=%s" % [id,selection_count,source])
  system_selected.emit(id)
+ if library_enabled: enter_library()
 
 func _build_history_panel() -> void:
  history_panel = PanelContainer.new()
@@ -652,6 +679,9 @@ func reset_dwell() -> void:
  dwell_elapsed = 0.0
 
 func _advance_dwell(delta: float) -> void:
+ if library_state != "system":
+  reset_dwell()
+  return
  var over_controls := false
  for button in footer.get_children():
   if button.visible and button.is_hovered(): over_controls = true
@@ -670,6 +700,7 @@ func _settle_history_motion() -> void:
  _layout()
 
 func open_history(automatic: bool = false) -> void:
+ if library_state != "system": return
  if history_open or inspect_mode or settings_panel.visible or not scene_active or not application_focused or transition_busy: return
  reset_dwell()
  auto_history_armed = false
@@ -753,6 +784,7 @@ func close_inspection() -> void:
  _layout()
 
 func toggle_inspection() -> void:
+ if library_state != "system": return
  if not scene_active or not application_focused: return
  if settings_panel.visible: return
  if inspect_mode:
@@ -821,6 +853,7 @@ func toggle_motion() -> void:
  _refresh_controls()
 
 func set_scene_active(value: bool) -> void:
+ if not value and library_state != "system": leave_library()
  scene_active = value
  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if value else SubViewport.UPDATE_DISABLED
  if not value:
@@ -833,16 +866,19 @@ func set_scene_active(value: bool) -> void:
   presentation.scale = Vector3.ONE
 
 func _pointer_left_window() -> void:
+ if library_view: library_view.cancel_drag()
  inspection_dragging = false
  hovering = false
  reset_dwell()
 
 func _focus_lost() -> void:
  application_focused = false
+ entry_paused = entry_tween != null and entry_tween.is_running()
+ if entry_paused: entry_tween.pause()
  _pointer_left_window()
  # Keep the transparent 3D target alive while the visible scene is unfocused.
  # Disabling it may drop the composed texture on some window/render backends.
- viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if scene_active else SubViewport.UPDATE_DISABLED
+ viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if scene_active and library_state != "library" else SubViewport.UPDATE_DISABLED
  history_paused_for_focus = history_transition != null and history_transition.is_running()
  if history_paused_for_focus: history_transition.pause()
  if transition and transition.is_running(): transition.kill()
@@ -851,10 +887,12 @@ func _focus_lost() -> void:
 
 func _focus_returned() -> void:
  application_focused = true
+ if entry_paused and entry_tween and entry_tween.is_valid(): entry_tween.play()
+ entry_paused = false
  inspection_dragging = false
  reset_dwell()
  cooldown = 0.4
- viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if scene_active else SubViewport.UPDATE_DISABLED
+ viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if scene_active and library_state != "library" else SubViewport.UPDATE_DISABLED
  if scene_active and history_paused_for_focus and history_transition and history_transition.is_valid(): history_transition.play()
  history_paused_for_focus = false
 
@@ -863,6 +901,13 @@ func _input(event: InputEvent) -> void:
   get_viewport().set_input_as_handled()
   return
  _observe_input_device(event)
+ if library_state != "system":
+  if library_state == "library":
+   if library_view.handle_event(event): get_viewport().set_input_as_handled()
+   return
+  elif input_profile.action_for(event) == "back" or (event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE): leave_library()
+  get_viewport().set_input_as_handled()
+  return
  if _settings_input(event):
   get_viewport().set_input_as_handled()
   return
@@ -935,6 +980,11 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
  if not scene_active or not application_focused: return
  if settings_panel.visible: return
+ if library_state != "system":
+  cooldown = maxf(0.0,cooldown-delta)
+  if not reduced_motion: elapsed += delta
+  bg_material.set_shader_parameter("animation_time",elapsed)
+  return
  if inspect_mode and input_device == "gamepad" and active_pad in Input.get_connected_joypads():
   var direction := Vector2(Input.get_joy_axis(active_pad,JOY_AXIS_LEFT_X),Input.get_joy_axis(active_pad,JOY_AXIS_LEFT_Y))
   if direction.length() > 0.25: rotate_inspection(direction * delta * 180.0)
@@ -960,9 +1010,10 @@ func _capture_sequence() -> void:
  await RenderingServer.frame_post_draw
  get_viewport().get_texture().get_image().save_png("res://evidence/cosmic/02_hover.png")
  confirm_selection("capture_test")
- await get_tree().create_timer(0.5).timeout
+ await get_tree().create_timer(1.6).timeout
  await RenderingServer.frame_post_draw
  get_viewport().get_texture().get_image().save_png("res://evidence/cosmic/03_confirmacao.png")
+ if library_state != "system": leave_library()
  toggle_inspection()
  await get_tree().create_timer(0.5).timeout
  await RenderingServer.frame_post_draw
@@ -1051,3 +1102,84 @@ func _qa_four_three() -> void:
  await get_tree().process_frame
  await get_tree().process_frame
  get_window().size = Vector2i(1024,768)
+
+func _build_library() -> void:
+ library_view = load("res://cosmic/library_view.gd").new()
+ ui.get_parent().add_child(library_view)
+ library_view.configure(self)
+ library_view.exit_requested.connect(leave_library)
+ library_view.hide()
+ entry_veil = ColorRect.new()
+ entry_veil.color = Color(0.015,0.02,0.05,0)
+ entry_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+ ui.get_parent().add_child(entry_veil)
+ entry_veil.hide()
+
+func enter_library() -> void:
+ if library_state != "system" or not scene_active or not application_focused: return
+ reset_dwell()
+ auto_history_armed = false
+ inspection_dragging = false
+ library_state = "entering"
+ entry_start_size = camera.size
+ presentation.position = Vector3.ZERO
+ ui.hide()
+ entry_veil.show()
+ if reduced_motion:
+  _finish_library_entry()
+  return
+ entry_tween = create_tween()
+ entry_tween.tween_method(_apply_entry,0.0,1.0,1.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+ entry_tween.tween_callback(_finish_library_entry)
+
+func _apply_entry(value: float) -> void:
+ entry_progress = value
+ var data = systems[current_index]
+ var s := get_viewport().get_visible_rect().size
+ viewport_container.position = Vector2(s.x*0.08,s.y*0.18).lerp(Vector2.ZERO,value)
+ viewport_container.size = Vector2(s.x*0.84,s.y*0.44).lerp(s,value)
+ camera.position = data.camera_position.lerp(Vector3(0.035,0.07,0.16),value)
+ camera.look_at(data.camera_target)
+ camera.size = lerpf(entry_start_size,0.038,value)
+ entry_veil.color.a = smoothstep(0.48,0.94,value)
+
+func _finish_library_entry() -> void:
+ library_state = "library"
+ viewport_container.hide()
+ viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+ library_view.open()
+ entry_veil.color.a = 1.0
+ if reduced_motion: entry_veil.hide()
+ else:
+  entry_tween = create_tween()
+  entry_tween.tween_property(entry_veil,"color:a",0.0,0.35)
+  entry_tween.tween_callback(entry_veil.hide)
+ print("COSMIC_LIBRARY opened template_only=true")
+
+func leave_library() -> void:
+ if library_state == "system": return
+ if entry_tween and entry_tween.is_valid(): entry_tween.kill()
+ entry_paused = false
+ library_view.close()
+ entry_veil.hide()
+ entry_veil.color.a = 0.0
+ library_state = "system"
+ entry_progress = 0.0
+ ui.show()
+ viewport_container.show()
+ viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if scene_active else SubViewport.UPDATE_DISABLED
+ camera.position = systems[current_index].camera_position
+ presentation.position = Vector3.ZERO
+ presentation.scale = Vector3.ONE
+ _layout()
+ console_button.grab_focus()
+ auto_history_armed = false
+ mouse_dwell_rearm_allowed = false
+ reset_dwell()
+ cooldown = 0.4
+ print("COSMIC_LIBRARY closed")
+
+func _qa_sixteen_nine() -> void:
+ await get_tree().process_frame
+ await get_tree().process_frame
+ get_window().size = Vector2i(1152,648)
