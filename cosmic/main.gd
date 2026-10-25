@@ -72,6 +72,7 @@ var last_input_source := ""
 var model_bounds := AABB()
 @export var exhibit_enabled := true
 var exhibit: Node3D
+var perspective_box_view
 var normal_bounds := AABB()
 @export var library_enabled := true
 var library_state := "system"
@@ -90,6 +91,9 @@ func _ready() -> void:
  get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
  _build_background()
  _build_3d()
+ perspective_box_view = load("res://cosmic/perspective_box_view.gd").new()
+ perspective_box_view.name = "PerspectiveBackgroundBox"
+ add_child(perspective_box_view)
  _build_ui()
  if library_enabled: _build_library()
  Input.joy_connection_changed.connect(_joy_connection_changed)
@@ -617,6 +621,7 @@ func _show_system() -> void:
  _layout()
 
 func _rebuild_exhibit() -> void:
+ if is_instance_valid(perspective_box_view): perspective_box_view.clear()
  if is_instance_valid(exhibit):
   exhibit.set_exhibit_visible(false)
   exhibit.get_parent().remove_child(exhibit)
@@ -632,6 +637,15 @@ func _rebuild_exhibit() -> void:
  var approved_view_basis := Basis.looking_at(systems[current_index].camera_target-systems[current_index].camera_position,Vector3.UP)
  if not exhibit.configure_extras(model, selected, presentation.global_basis.inverse()*camera.get_parent().global_basis*approved_view_basis):
   push_warning("Exhibit incomplete: " + str(exhibit.configuration_errors))
+ if is_instance_valid(exhibit.game_box) and is_instance_valid(perspective_box_view):
+  # Preserve approved console framing using the original physical placement as
+  # a non-rendered bounds proxy. Only the dedicated perspective world draws art.
+  if perspective_box_view.configure(selected):
+   for mesh in exhibit.game_box.find_children("*","MeshInstance3D",true,false):
+    mesh.layers = 0
+   exhibit.game_box.set_meta("perspective_bounds_proxy",true)
+  else:
+   push_warning("Perspective box unavailable; original physical fallback retained.")
  _sync_exhibit_visibility()
 
 func _default_system_status() -> String:
@@ -643,9 +657,32 @@ func _sync_exhibit_visibility() -> void:
  if is_instance_valid(exhibit):
   var retain_during_entry := library_state == "entering" and not reduced_motion and entry_progress < 0.94
   exhibit.set_exhibit_visible(not inspect_mode and not history_open and history_blend <= 0.001 and (library_state == "system" or retain_during_entry))
+ if is_instance_valid(perspective_box_view):
+  perspective_box_view.set_active(is_instance_valid(exhibit) and exhibit.visible and is_instance_valid(exhibit.game_box) and exhibit.game_box.get_meta("perspective_bounds_proxy",false))
+  perspective_box_view.set_scene_active(scene_active)
  if is_instance_valid(status):
   status.visible = is_instance_valid(exhibit) and exhibit.hardware_art_missing and not inspect_mode and not history_open and history_blend <= 0.001 and library_state == "system"
   if status.visible: status.text = _default_system_status()
+
+func _update_perspective_box_frame() -> void:
+ if not is_instance_valid(perspective_box_view): return
+ if not is_instance_valid(exhibit) or not is_instance_valid(exhibit.game_box): return
+ var low := Vector2(INF,INF)
+ var high := Vector2(-INF,-INF)
+ for mesh in exhibit.game_box.find_children("*","MeshInstance3D",true,false):
+  if mesh.mesh == null or not mesh.is_visible_in_tree(): continue
+  for corner in 8:
+   var world_point: Vector3 = mesh.global_transform*mesh.get_aabb().get_endpoint(corner)
+   if camera.is_position_behind(world_point): continue
+   var projected := camera.unproject_position(world_point)
+   low = low.min(projected)
+   high = high.max(projected)
+ if not is_finite(low.x): return
+ var ratio := viewport_container.size/Vector2(viewport.size).max(Vector2.ONE)
+ var rect := Rect2(viewport_container.position+low*ratio,(high-low)*ratio)
+ perspective_box_view.set_frame(rect)
+ # Follow entry fade without ever drawing over the library or UI.
+ perspective_box_view.modulate.a = 1.0-smoothstep(0.48,0.94,entry_progress) if library_state == "entering" else 1.0
 
 func _collect_bounds(node: Node3D) -> AABB:
  var result := AABB()
@@ -916,6 +953,7 @@ func toggle_motion() -> void:
  _refresh_controls()
 
 func set_scene_active(value: bool) -> void:
+ if is_instance_valid(perspective_box_view): perspective_box_view.set_scene_active(value)
  if not value and library_state != "system": leave_library()
  scene_active = value
  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if value else SubViewport.UPDATE_DISABLED
@@ -1041,6 +1079,7 @@ func _input(event: InputEvent) -> void:
    navigate(-1 if event.axis_value < 0 else 1)
 
 func _process(delta: float) -> void:
+ _update_perspective_box_frame()
  if not scene_active or not application_focused: return
  if settings_panel.visible: return
  if library_state != "system":
@@ -1211,6 +1250,7 @@ func _apply_entry(value: float) -> void:
  camera.look_at(entry_start_camera_target.lerp(data.camera_target,value))
  camera.size = lerpf(entry_start_size,0.038,value)
  entry_veil.color.a = smoothstep(0.48,0.94,value)
+ _update_perspective_box_frame()
 
 func _finish_library_entry() -> void:
  bg_material.set_shader_parameter("entry_warp",0.0)

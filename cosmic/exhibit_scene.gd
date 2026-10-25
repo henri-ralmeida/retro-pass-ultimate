@@ -153,7 +153,8 @@ func _populate(item: Dictionary) -> bool:
   game_box = BoxScene.new()
   game_box.configure(item)
   add_child(game_box)
-  game_box.toggle_lid() # Preserve the original 115-degree hinge articulation.
+  game_box.set_lid_angle(90.0) # Native bounds/fallback pose; HOME perspective renderer owns the visible calibrated box.
+  game_box.opened = true
   # Undo GameBox's library display normalization, preserving exact native meters.
   var native_factor: float = game_box.original_model.scale.x
   game_box.scale = Vector3.ONE / native_factor
@@ -163,27 +164,42 @@ func _populate(item: Dictionary) -> bool:
  return configuration_errors.is_empty()
 
 func _place_open_box_behind_console(console_bounds: AABB) -> void:
- var front := game_box.find_child("Box_FRONT", true, false) as MeshInstance3D
- if front == null:
-  configuration_errors.append("Original front-cover plane unavailable")
+ var base := game_box.find_child("Case_back", true, false) as MeshInstance3D
+ var lid := game_box.find_child("Case_lid", true, false) as MeshInstance3D
+ if base == null or lid == null:
+  configuration_errors.append("Original interior surfaces unavailable")
   return
- # Align the actual opened front-cover normal, not an arbitrary hinge angle.
- # In the canonical rig, the portrait top remains +Y after library normalization.
- var front_in_box := game_box.transform.affine_inverse() * relative_transform(front)
- var normal := (front_in_box.basis * Vector3.UP).normalized()
- var up := Vector3.UP
+ # Present the physical EXTERIOR wrap in a joined V: back, spine and front.
+ var inverse_box := game_box.transform.affine_inverse()
+ var base_frame := inverse_box * relative_transform(base)
+ var lid_frame := inverse_box * relative_transform(lid)
+ var normal := -((base_frame.basis*Vector3.UP).normalized() + (lid_frame.basis*Vector3.DOWN).normalized()).normalized()
+ var up := (base_frame.basis*Vector3.FORWARD).normalized()
  var right := up.cross(normal).normalized()
  up = normal.cross(right).normalized()
- var original_cover_frame := Basis(right, up, normal)
  var uniform_scale: float = game_box.scale.x
- game_box.basis = presentation_basis * original_cover_frame.inverse() * Basis.from_scale(Vector3.ONE*uniform_scale)
- var cover_center := relative_transform(front) * front.get_aabb().get_center()
- # The cover is behind the console in camera depth, above/left in screen space.
- # Its lower portion may be occluded, while its portrait artwork stays authentic.
- var target := console_bounds.get_center() - presentation_basis.z*0.26 - presentation_basis.x*0.095 + presentation_basis.y*0.075
- game_box.position += target-cover_center
- game_box.set_meta("background_cover_center", target)
- game_box.set_meta("native_scale", 1.0)
+ game_box.basis = presentation_basis * Basis(Vector3.RIGHT,deg_to_rad(-12.0)) * Basis(Vector3.UP,deg_to_rad(5.0)) * Basis(right,up,normal).inverse() * Basis.from_scale(Vector3.ONE*uniform_scale)
+ var center := bounds_of(game_box).get_center()
+ var target := console_bounds.get_center() - presentation_basis.z*0.26 - presentation_basis.x*0.15 + presentation_basis.y*0.10
+ game_box.position += target-center
+ # Keep the full physical box to the left of the console in screen projection.
+ # Its depth stays behind the console, without artwork being hidden by it.
+ var console_span := projected_horizontal_span(console)
+ var box_span := projected_horizontal_span(game_box)
+ game_box.position += presentation_basis.x*(console_span.x-0.018-box_span.y)
+ game_box.set_meta("background_exterior_center",bounds_of(game_box).get_center())
+ game_box.set_meta("native_scale",1.0)
+
+func projected_horizontal_span(node: Node3D) -> Vector2:
+ var span := Vector2(INF,-INF)
+ for mesh in node.find_children("*","MeshInstance3D",true,false):
+  if not mesh.visible or mesh.mesh == null: continue
+  var frame := relative_transform(mesh)
+  for corner in 8:
+   var coordinate: float = (frame*mesh.get_aabb().get_endpoint(corner)).dot(presentation_basis.x)
+   span.x = minf(span.x,coordinate)
+   span.y = maxf(span.y,coordinate)
+ return span
 
 func _add_exhibit_fill() -> void:
  var fill := OmniLight3D.new()
@@ -243,7 +259,7 @@ func _seat_matching_cartridge() -> void:
  # Move the existing floor below the cartridge, without modifying its mesh.
  var floor_top := seated_bounds.position.y-0.0016
  well_display.origin.y += floor_top-original_slot_top
- game_box.cartridge = null # One original cartridge is moved, never cloned.
+ game_box.cartridge = null # One original cartridge, seated in the console; no loose HOME copy.
  inserted_cartridge.set_meta("selected_game_id",str(selected_item.get("id","unavailable")))
  insertion_status = "Original cartridge; approximately 26 mm exposed from photo reference. Reversible display-only slot clipping, not simulated mechanics."
  slot_ready = true
