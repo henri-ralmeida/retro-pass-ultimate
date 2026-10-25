@@ -1,6 +1,13 @@
 extends Node
 const InputProfile = preload("res://cosmic/input_profile.gd")
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
+const LocalMediaHost = preload("res://cosmic/media_optin_host.gd")
+var media_host
+var media_button: Button
+var media_release_gate := false
+const MediaInputSnapshot = preload("res://cosmic/controller_input_snapshot.gd")
+var media_input_snapshot = MediaInputSnapshot.new()
+var media_release_device := -1
 const ControllerPanel = preload("res://cosmic/controller_mapping_panel.gd")
 const ControllerHomePicker = preload("res://cosmic/controller_home_picker.gd")
 ## Independent museum presentation. No ROM or emulator execution.
@@ -131,6 +138,7 @@ func _ready() -> void:
  controller_panel.setup_host(input_profile)
  controller_panel.title.add_theme_font_override("font",orbitron)
  controller_panel.closed.connect(_controller_panel_closed)
+ _build_local_media_host()
  Input.joy_connection_changed.connect(_joy_connection_changed)
  var pads := Input.get_connected_joypads()
  if not pads.is_empty(): _set_input_device("gamepad",pads[0],Input.get_joy_name(pads[0]))
@@ -163,6 +171,7 @@ func _set_input_device(kind: String, device: int = -1, device_name: String = "")
   library_view.refresh_controls()
 
 func _joy_connection_changed(device: int, connected: bool) -> void:
+ if not connected: media_input_snapshot.forget_device(device)
  # The modal owns its chosen device. Do not silently adopt another pad behind it.
  if _controller_blocks_background(): return
  if connected and active_pad < 0:
@@ -198,7 +207,10 @@ func _refresh_controls() -> void:
  for button in footer.get_children():
   var action: String = button.get_meta("action","")
   var glyph = button.find_child("InputGlyph",true,false)
-  if action == "settings":
+  if action == "local_media":
+   glyph.symbol = ""
+   glyph.family = "keyboard"
+  elif action == "settings":
    glyph.symbol = "F1"
    glyph.family = "keyboard"
   else:
@@ -1081,9 +1093,13 @@ func _focus_returned() -> void:
  history_paused_for_focus = false
 
 func _input(event: InputEvent) -> void:
+ media_input_snapshot.observe(event)
  controller_last_event = event
  if not scene_active or not application_focused:
   get_viewport().set_input_as_handled()
+  return
+ if is_instance_valid(media_host) and media_host.is_open():
+  if media_host.route_input(event): get_viewport().set_input_as_handled()
   return
  # A false route result allows the MODAL'S GUI only. Never fall through to HOME.
  if is_instance_valid(controller_panel) and controller_panel.is_open():
@@ -1271,6 +1287,21 @@ func _controller_panel_closed(_port: int) -> void:
  reset_dwell()
 
 func _controller_inputs_neutral() -> bool:
+ if media_release_gate:
+  if not media_input_snapshot.neutral(media_release_device, true): return false
+  # Inspection uses vector magnitude, not independent axis deadzones. A diagonal
+  # (0.2,0.2) must not restart rotation after modal dismissal.
+  for device in [media_release_device, media_input_snapshot.opening_device]:
+   if device < 0: continue
+   var direction := Vector2.ZERO
+   if media_input_snapshot.poll_physical:
+    if device not in Input.get_connected_joypads(): continue
+    direction = Vector2(Input.get_joy_axis(device,JOY_AXIS_LEFT_X),Input.get_joy_axis(device,JOY_AXIS_LEFT_Y))
+   else:
+    var axes: Dictionary = media_input_snapshot.axes.get(device,{})
+    direction = Vector2(float(axes.get(JOY_AXIS_LEFT_X,0.0)),float(axes.get(JOY_AXIS_LEFT_Y,0.0)))
+   if not direction.is_finite() or direction.length() > 0.25: return false
+  return true
  # The panel retains its ledger after closing, including the pinned device and
  # opening gesture. Never let drift from an unrelated pad deadlock return.
  if is_instance_valid(controller_panel): return controller_panel.release_inputs_neutral()
@@ -1281,6 +1312,7 @@ func _advance_controller_release_gate(delta: float, all_neutral: bool) -> void:
  controller_release_elapsed = controller_release_elapsed + maxf(delta,0.0) if all_neutral else 0.0
  if controller_release_elapsed < CONTROLLER_RELEASE_SECONDS: return
  controller_release_gate = false
+ media_release_gate = false
  controller_release_elapsed = 0.0
  _set_background_blocked(false)
  if active_pad >= 0 and active_pad not in Input.get_connected_joypads(): _set_input_device("keyboard")
@@ -1588,3 +1620,63 @@ func _qa_sixteen_nine() -> void:
  await get_tree().process_frame
  await get_tree().process_frame
  get_window().size = Vector2i(1152,648)
+
+
+func _build_local_media_host() -> void:
+ media_button = _action_button("local_media","Mídia local","Configuração opcional · sem download",_open_local_media)
+ footer.add_child(media_button)
+ media_host = LocalMediaHost.new()
+ media_host.name = "LocalMediaOptionalGuide"
+ media_host.profile = input_profile
+ media_host.catalog_getter = _local_media_inventory
+ media_host.catalog_apply = _apply_local_media
+ media_host.can_apply = func(): return not transition_busy
+ media_host.launcher = media_button
+ var local_theme := Theme.new()
+ local_theme.default_font = chakra
+ local_theme.default_font_size = 16
+ media_host.theme = local_theme
+ ui.get_parent().add_child(media_host)
+ media_host.opened.connect(func(): _set_background_blocked(true))
+ media_host.closed.connect(func():
+  controller_release_gate = true
+  media_release_gate = true
+  controller_release_elapsed = 0.0
+  reset_dwell())
+
+func _open_local_media() -> void:
+ if _controller_blocks_background() or library_state != "system" or transition_busy: return
+ controller_return_focus = media_button
+ controller_return_settings = settings_panel.visible
+ settings_panel.hide()
+ media_release_device = active_pad
+ media_input_snapshot.mark_opening(controller_last_event)
+ media_host.open_panel()
+
+func _local_media_inventory() -> Array:
+ # Already-loaded metadata only. No scan, file-open, name/edition inference.
+ var items: Array = []
+ for view in [sms_library_view,atari_library_view]:
+  if is_instance_valid(view): items.append_array(view.ITEMS.duplicate(true))
+ return items
+
+func _apply_local_media(result: Dictionary) -> int:
+ # Apply to this session only; original catalog file and source media untouched.
+ # Only metadata is changed here; visible meshes/textures refresh on normal navigation.
+ # Current decode/hash + identity checks completed on the worker.
+ var updated: Array = result.get("items",[])
+ var cache = load("res://cosmic/library_artwork_cache.gd").shared()
+ for path in result.get("changed_paths",[]): cache.invalidate(str(path))
+ for view in [sms_library_view,atari_library_view]:
+  if not is_instance_valid(view): continue
+  for i in view.ITEMS.size():
+   var old: Dictionary = view.ITEMS[i]
+   for item in updated:
+    if item.get("id","") == old.get("id","") and item.get("system","") == old.get("system",""):
+     for field in ["cover_front","cover_back","cover_spine","cover_edge","cartridge_label","cartridge_top","wheel"]:
+      if item.get(field,"") != old.get(field,""): cache.invalidate(str(item.get(field,"")))
+     if view == sms_library_view and (item != old or not result.get("changed_paths",[]).is_empty()): view.local_media_refresh_pending = true
+     view.ITEMS[i] = item.duplicate(true)
+     break
+  view.catalog_choice.update_catalog(view.ITEMS)
+ return int(result.get("applied",0))

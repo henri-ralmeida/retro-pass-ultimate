@@ -76,7 +76,7 @@ Não incluir jogos, saves, credenciais, caches, builds ou mídias pessoais neste
 
 ## Próximos incrementos de configuração
 
-Tour inicial opcional para escolher o Master System, uma pasta local e categorias de mídia desejadas (capas, imagens, wheel e manual), com opção de pular e configurar depois. A fila deve distinguir importação/processamento local de download e contar arquivos de mídia, não presumir um arquivo por jogo. Essas telas e a obtenção online ainda não estão implementadas. Nenhum fluxo baixa ROMs.
+O guia opcional de mídia local já está disponível pela ação Mídia local: sistema, raiz e categorias explícitas, com Pular e Configurar depois. Ele conta arquivos separadamente de jogos e associa somente referências locais validadas, conforme os limites do checkpoint abaixo. Permanecem pendentes o tour automático no primeiro uso, a fila completa de conversão/preparação e a obtenção online. Nenhum fluxo baixa ROMs.
 
 Revisão do controle 3D: corrigido fechamento inesperado após clicar Voltar durante Testar entradas e salvar depois. Cobertura adicional de layout P1/P2/conflitos em 16:9 e 4:3; o visual/modelo aprovado permanece inalterado. Windows e gamepads físicos continuam pendentes.
 
@@ -103,3 +103,67 @@ Ao confirmar o console, a escolha usa o catálogo disponível daquele sistema. P
 A biblioteca pode abrir a caixa com dois eixos, extrair seu próprio cartucho e inseri-lo no console em um único mundo transitório, com Voltar reversível e restauração da câmera. A HOME não é alterada. O sorteio conserva elegibilidade, ID e variante; sem mídia correspondente ou geometria validada, permanece o fallback explícito, sem trocar jogo nem executar ROMs. A amostra legada requer vínculo privado por hash, sem inferir revisão/região.
 
 Veja [contrato e limites](docs/SMS_INSERTION.md). Geometria derivada, bindings de mídia, caches e evidências permanecem privados.
+
+## Mídia local opcional — integração de sessão
+
+O botão **Mídia local** no HOME abre um guia opcional. Nada é selecionado por
+padrão: escolha sistema, raiz absoluta e categorias; **Pular** e **Configurar
+depois** preservam a navegação. A revisão mostra sistema/raiz/categorias do plano
+real. Só **Confirmar processamento local** com a escolha OK focada autoriza o
+worker. Cancelar, inclusive com controles remapeados, nunca autoriza leitura.
+
+- O guia usa somente `media_metadata` de entradas já carregadas pelo catálogo;
+  não inicia scanner, não lê ROMs, não procura jogos por nome e não busca rede.
+  O scanner de pastas, cache de arte e wheel existentes permanecem disponíveis.
+- Um painel/serviço é dono do journal privado `user://`. Fechar o guia não mata
+  o worker; progresso de arquivos fica no botão/tooltip e detalhes no painel.
+  Cancelar é cooperativo; sair do aplicativo cancela e faz join seguro.
+- Configuração e último plano são persistidos privadamente com limite16MiB,
+  validação e backup. Reiniciar **oferece** retomada, nunca a executa. A retomada
+  exige confirmação nova e relê todos os arquivos, inclusive já concluídos.
+- Leitura/hash e associação são fases distintas. Após leitura, o mesmo worker
+  revalida hash e decodifica bytes atuais PNG/JPEG/WebP suportados, com limites
+  de 64 MiB de arquivo e 64 Mi pixels reutilizados do cache. Nenhuma textura/GPU é
+  criada nesse worker. Hash sozinho não valida imagem, jogo ou edição.
+- Só referências exatas de ID+sistema+variante+tag/superfície são associadas;
+  mudança de inventário entre consentimento e aplicação descarta o resultado.
+  Aliases conflitantes, ausências e formatos inválidos permanecem explícitos.
+  Capas/labels e wheel não são inferidos de screenshots ou imagens genéricas.
+- Associações atualizam uma **cópia do catálogo em memória nesta sessão**,
+  preservando a superfície anterior/procedência. Arquivo do catálogo original
+  e mídias originais não são sobrescritos. Cache é invalidado inclusive quando
+  bytes mudam no mesmo caminho; caixa/wheel atualizam na próxima entrada normal
+  da biblioteca, sem sortear outro jogo. Não se reaplica resultado salvo no boot.
+- Contagens separam arquivos lidos, jogos com leitura completa, erros de arquivo,
+  omissões e vínculos aplicados/não aplicados. Não há download, importação de
+  ROM, emulação, conversão PDF, geração de páginas, thumbnails ou compressão.
+
+**Limites:** este incremento não é uma fila completa de preparação multimídia.
+O cache existente ainda faz preload/resize/texturas na navegação. PDF/manual e
+imagens genéricas podem ser lidos/hashados se selecionados, mas não são aplicados
+como capas/páginas. O inventário Atari atual não fornece o contrato de
+`media_metadata`; o guia informa ausência de referências, sem alegar aplicação
+Atari. Mark III também depende de entradas com sistema exato. Fontes locais devem
+permanecer estáveis: substituição maliciosa após validação (TOCTOU) não é eliminada.
+Shutdown pode aguardar I/O/decode em andamento. Um dono por journal dentro do app;
+não há lock para múltiplos processos. Caminhos/journals/hashs são privados, nunca
+parte da publicação.
+
+Testes sintéticos: `tools/verify_project.sh` inclui configuração/plano/fila,
+persistência em 3 processos, serviço/painel, store, associação e consentimento
+remapeado (inclusive Cancel com Enter/Espaço/gamepad). QA é cloud Linux; não
+comprova controle físico, diálogo Windows ou GPU do usuário.
+
+Verificação deste incremento (cloud Linux): o componente 2D real foi exercitado
+em 1152×648 e 1024×768, com confirmação, cancelamento, leitura e retomada.
+Uma execução do main 3D em 16:9 abriu o guia e voltou pela opção Pular; o fluxo
+completo de processamento e o main 4:3 não foram validados visualmente juntos.
+As tentativas de import CLI terminaram externamente (-9/137), sem diagnóstico
+causal fechado. A suíte incremental é executada separadamente usando cache de
+assets idêntico à base; isso não equivale a import limpo nem ao PASS integral do
+script incluindo sua etapa de importação. A comparação visual base/candidato
+teve mudança espontânea de processo do navegador, portanto não prova causalidade.
+
+Próximo passo: import limpo em ambiente estável e QA integrado completo em 4:3/16:9,
+seguido de Windows/controle físico. A fila completa de conversão e download não
+faz parte deste checkpoint.

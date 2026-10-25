@@ -1,0 +1,95 @@
+extends SceneTree
+const Config = preload("res://cosmic/media_optin_config.gd")
+const Planner = preload("res://cosmic/media_optin_plan.gd")
+const Queue = preload("res://cosmic/media_local_queue.gd")
+var assertions := 0
+var failures := 0
+func check(value: bool, label: String) -> void:
+ assertions += 1
+ if not value:
+  failures += 1
+  push_error(label)
+func write(path: String, text: String) -> void:
+ var f := FileAccess.open(path, FileAccess.WRITE)
+ f.store_string(text)
+ f.close()
+func run_queue(q: RefCounted) -> void:
+ for i in range(5): q.tick()
+func _initialize() -> void:
+ var token := str(Time.get_ticks_usec())
+ var fixture := ProjectSettings.globalize_path("user://review_fixture_" + token)
+ var journal := "user://review_journal_" + token
+ DirAccess.make_dir_recursive_absolute(fixture)
+ var source := fixture.path_join("exact.png")
+ write(source, "first-synthetic-source")
+ var config := Config.choose("master_system", fixture, ["covers"])
+ var good := {"id":"good", "system":"master_system", "media_metadata":{"cover_front":{"relative_path":"exact.png", "status":"present"}}}
+ var invalid := {"id":"invalid", "system":"master_system", "media_metadata":{"cover_front":{"relative_path":"../outside.png", "status":"present"}}}
+ var absent := {"id":"absent", "system":"master_system", "media_metadata":{}}
+ var plan := Planner.build(config, [good, invalid, absent])
+ check(plan.games_total == 3 and plan.issues.size() == 2, "Issues and wholly missing selected category count games")
+ var q := Queue.new()
+ check(q.start(plan, journal) == OK, "Start mixed plan")
+ run_queue(q)
+ var p := q.progress()
+ check(p.status == "completed_with_errors" and p.associations_omitted == 2, "Omitted references never report done")
+ check(p.games_done == 1 and p.games_total == 3 and p.files_total == 1, "Omitted references not fictional files or complete games")
+ var same_game := good.duplicate(true)
+ same_game.media_metadata.cover_back = {"relative_path":"bad.pdf", "status":"present"}
+ var mixed := Planner.build(config, [same_game])
+ var mq := Queue.new()
+ mq.start(mixed, journal + "mixed")
+ run_queue(mq)
+ check(mq.progress().games_done == 0, "Successful front does not hide unsupported back")
+ var only_issues := Planner.build(config, [invalid])
+ mq.start(only_issues, journal + "mixed")
+ run_queue(mq)
+ check(mq.progress().status == "completed_with_errors" and mq.progress().games_done == 0 and mq.progress().files_total == 0, "Only issues never reports done or complete game")
+ var clean := Planner.build(config, [good])
+ q.start(clean, journal)
+ run_queue(q)
+ var old_hash: String = q.state.files[0].sha256
+ write(source, "second-synthetic-source")
+ check(q.restore(clean, journal) == OK and q.progress().files_done == 0, "Resume never trusts old done")
+ run_queue(q)
+ check(q.state.files[0].sha256 != old_hash and q.progress().files_changed == 1, "Changed source read and detected")
+ DirAccess.remove_absolute(source)
+ q.restore(clean, journal)
+ run_queue(q)
+ check(q.progress().files_error == 1 and q.progress().games_done == 0, "Removed completed source becomes error on resume")
+ write(fixture.path_join("target.png"), "target")
+ var linked := DirAccess.open(fixture).create_link(fixture.path_join("target.png"), source)
+ check(linked == OK, "Synthetic symlink fixture available")
+ q.restore(clean, journal)
+ run_queue(q)
+ check(q.progress().files_error == 1 and q.progress().bytes_read == 0, "Replaced source symlink rejected on resume")
+ DirAccess.remove_absolute(source)
+ write(source, "third-source")
+ q.restore(clean, journal)
+ run_queue(q)
+ var saved := FileAccess.get_file_as_string(journal)
+ q.state["oversized_fixture"] = "x".repeat(Queue.MAX_JOURNAL_BYTES)
+ check(q._save() != OK and q.last_error == "journal_too_large", "Over-limit UTF-8 journal refused before write")
+ check(FileAccess.get_file_as_string(journal) == saved, "Oversized snapshot preserves latest valid journal")
+ q.state.erase("oversized_fixture")
+ check(q.restore(clean, journal) == OK, "Preserved journal remains resumable")
+ var oversized_plan := clean.duplicate(true)
+ oversized_plan.files[0]["padding_fixture"] = "x".repeat(Queue.MAX_JOURNAL_BYTES - JSON.stringify(q.state).to_utf8_buffer().size() - 200)
+ var prior_journal := FileAccess.get_file_as_string(journal)
+ var over := Queue.new()
+ check(over.start(oversized_plan, journal) != OK and over.progress().bytes_read == 0 and over.last_error == "journal_capacity_exceeded", "Capacity preflight reserves hash/status growth before any media read")
+ check(JSON.stringify(over.state).to_utf8_buffer().size() < Queue.MAX_JOURNAL_BYTES, "Preflight rejects near-limit state that fits initially but cannot safely grow")
+ check(FileAccess.get_file_as_string(journal) == prior_journal, "Capacity preflight preserves valid journal")
+ oversized_plan.clear()
+ check(q.state.issues.is_empty(), "Plan issues restored from matching approved plan")
+ q.start(plan, journal)
+ q.cancel()
+ check(q.restore(plan, journal) == OK and q.progress().associations_omitted == 2, "Issues survive cancellation and resume")
+ for name in [journal, journal + "mixed"]:
+  for suffix in ["", ".bak", ".tmp"]:
+   if FileAccess.file_exists(name + suffix): DirAccess.remove_absolute(name + suffix)
+ DirAccess.remove_absolute(source)
+ DirAccess.remove_absolute(fixture.path_join("target.png"))
+ DirAccess.remove_absolute(fixture)
+ print("MEDIA_REVIEW_REGRESSIONS: ", assertions, " assertions; ", failures, " failures")
+ quit(0 if failures == 0 else 1)

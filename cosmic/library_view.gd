@@ -17,6 +17,7 @@ var insertion_session := SmsInsertion.new()
 var insertion_active := false
 var insertion_failed := false
 var insertion_rebuild := false
+var local_media_refresh_pending := false
 var insertion_status := ""
 var insert_button: Button
 var insertion_neighbor_rest: Array[Dictionary] = []
@@ -542,7 +543,8 @@ func _exit_tree() -> void:
 func open() -> void:
  _build()
  if not built: return
- if insertion_rebuild or not is_instance_valid(box):
+ if local_media_refresh_pending or insertion_rebuild or not is_instance_valid(box):
+  local_media_refresh_pending = false
   insertion_rebuild = false
   insertion_failed = false
   if not is_instance_valid(camera):
