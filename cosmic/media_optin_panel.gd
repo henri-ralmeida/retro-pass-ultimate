@@ -217,7 +217,7 @@ func _process(_delta: float) -> void:
  for issue in snapshot.get("issues", []).slice(0, 5):
   status_label.text += "\nOmitido: %s · %s" % [issue.get("tag", "") if not str(issue.get("tag", "")).is_empty() else issue.get("category", ""), issue.get("status", "")]
  for failure in snapshot.get("file_failures", []).slice(0, 5):
-  status_label.text += "\nFalha de arquivo: %s" % failure.get("error", "")
+  status_label.text += "\nFalha de arquivo: %s" % (preload("res://cosmic/manual_pdf_service.gd").description() if failure.get("error", "") == "pdf_backend_unavailable" else failure.get("error", ""))
  if snapshot.get("issues", []).size() > 5 or snapshot.get("file_failures", []).size() > 5:
   status_label.text += "\nResumo limitado; detalhes completos preservados no resultado local."
  if not service.is_busy() and snapshot.status in ["done", "completed_with_errors", "cancelled", "storage_error", "setup_error", "thread_error"]:
