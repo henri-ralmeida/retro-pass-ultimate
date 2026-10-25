@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="CosmicSystemData" load_steps=3 format=3]
+[ext_resource type="Script" path="res://cosmic/system_data.gd" id="1"]
+[ext_resource type="PackedScene" path="res://cosmic/atari_console.tscn" id="2"]
+[resource]
+script = ExtResource("1")
+system_id = "atari2600"
+display_name = "Atari 2600"
+subtitle = "Heavy Sixer · mídia privada opcional · sem emulação"
+model = ExtResource("2")
+camera_position = Vector3(0.36, 0.42, 0.65)
+camera_target = Vector3(0, 0.05, 0)
+framing_size = 0.40
+history_text = "Reconstrução visual Heavy Sixer e controle CX10. O ano de fabricação do equipamento pessoal e a correspondência exata da edição de Adventure não foram autenticados. Mídia local apenas com habilitação explícita; nenhum jogo é executado."
+history_credits = "Modelos e imagens privados preservados. Licença de redistribuição não estabelecida."

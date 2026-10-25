@@ -58,6 +58,8 @@ func run() -> void:
   _finish()
   return
  var scene = packed.instantiate()
+ # This fixture verifies authored SMS history; multi-system routing has its own regression.
+ scene.systems.resize(1)
  scene.library_enabled = false # Standalone selector fixture; route covered by test_library.gd.
  root.add_child(scene)
  await process_frame

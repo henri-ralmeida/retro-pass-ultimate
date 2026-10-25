@@ -79,3 +79,13 @@ Não incluir jogos, saves, credenciais, caches, builds ou mídias pessoais neste
 Tour inicial opcional para escolher o Master System, uma pasta local e categorias de mídia desejadas (capas, imagens, wheel e manual), com opção de pular e configurar depois. A fila deve distinguir importação/processamento local de download e contar arquivos de mídia, não presumir um arquivo por jogo. Essas telas e a obtenção online ainda não estão implementadas. Nenhum fluxo baixa ROMs.
 
 Revisão do controle 3D: corrigido fechamento inesperado após clicar Voltar durante Testar entradas e salvar depois. Cobertura adicional de layout P1/P2/conflitos em 16:9 e 4:3; o visual/modelo aprovado permanece inalterado. Windows e gamepads físicos continuam pendentes.
+
+## Atari 2600 — checkpoint integrado (2026-10-25)
+
+O seletor inclui Atari como segundo sistema. A biblioteca contextual permite inspecionar caixa, cartucho único e manual 3D com quatro folhas/oito faces, quando fornecidos pelo manifesto privado explícito `RETROPASS_ATARI_MEDIA_MANIFEST`. Sem manifesto, não cria modelos substitutos nem promete mídia disponível. Os modelos não são distribuídos neste repositório.
+
+O fluxo inclui Voltar, foco de teclado/D-pad e perfil de navegação do frontend; não altera o remapeamento de gameplay do Master System. O carregamento dos cinco modelos é adiado até abrir a biblioteca. Mantém a perspectiva Master System aprovada.
+
+Checkpoint, não animação final: as abas originais abrem/fecham e há inspeção, mas a sequência contínua de retirada/encaixe ainda está pendente. Não executa jogos nem emulação. Correspondência exata da edição e licença de redistribuição seguem sem confirmação. QA visual realizado no Godot cloud Linux em 1024×768 e 1152×648; não equivale a teste Windows, GPU do usuário ou gamepad físico.
+
+Verificação do checkpoint: importação Godot e `tools/verify_project.sh` concluídas (53 scripts, persistência em dois processos e auditorias); testes privados de cinco GLBs, biblioteca e alternância SMS↔Atari também passaram. Regressões incluem ausência de mídia, foco/Back remapeado, D-pad contextual, cancelamento e histórico automático. Evidências e complemento privado ficam fora do Git.

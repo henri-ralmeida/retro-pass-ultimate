@@ -13,7 +13,10 @@ func run() -> void:
  root.add_child(scene)
  await process_frame
  scene.system_selected.connect(func(id): emitted.append(id))
- check(scene.systems.size()==1,"Exactly one real system")
+ check(scene.systems.size()==2,"SMS and Atari are registered")
+ check(scene.systems[1].system_id=="atari2600","Atari second system identity")
+ # Preserve the isolated single-system selector contract below; cross-system flow has its own test.
+ scene.systems.resize(1)
  check(scene.systems[0].system_id=="sega_master_system","Stable ID")
  check(scene.model!=null,"Model instantiated")
  check(scene.camera!=null,"Camera exists")

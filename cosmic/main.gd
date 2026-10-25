@@ -5,7 +5,7 @@ const ControllerPanel = preload("res://cosmic/controller_mapping_panel.gd")
 const ControllerHomePicker = preload("res://cosmic/controller_home_picker.gd")
 ## Independent museum presentation. No ROM or emulator execution.
 signal system_selected(system_id: String)
-@export var systems: Array[Resource] = [preload("res://cosmic/master_system.tres")]
+@export var systems: Array[Resource] = [preload("res://cosmic/master_system.tres"), preload("res://cosmic/atari_system.tres")]
 @export var dwell_seconds := 8.0
 var dwell_elapsed := 0.0
 var dwell_uses_mouse := false
@@ -79,6 +79,9 @@ var normal_bounds := AABB()
 @export var library_enabled := true
 var library_state := "system"
 var library_view
+var sms_library_view
+var atari_library_view
+const AtariBridge = preload("res://cosmic/atari_system_bridge.gd")
 var entry_tween: Tween
 var entry_progress := 0.0
 var entry_start_camera_position := Vector3.ZERO
@@ -629,6 +632,7 @@ func _frame_model() -> void:
   camera.size = maxf(extent.y,extent.x/ratio) * 1.48 / inspection_zoom
 
 func _show_system() -> void:
+ _activate_system_library()
  if is_instance_valid(exhibit):
   exhibit.set_exhibit_visible(false)
   exhibit.get_parent().remove_child(exhibit)
@@ -643,6 +647,8 @@ func _show_system() -> void:
  inspection_pivot.add_child(model)
  model.transform = data.presentation_transform
  model_bounds = _collect_bounds(model)
+ if is_instance_valid(inspect_button):
+  inspect_button.disabled = AtariBridge.handles(data) and not bool(model.get_meta("atari_media_available",false))
  var center := model_bounds.get_center()
  inspection_pivot.position = center
  model.position -= center
@@ -671,6 +677,9 @@ func _rebuild_exhibit() -> void:
   exhibit.get_parent().remove_child(exhibit)
   exhibit.queue_free()
   exhibit = null
+ if AtariBridge.handles(systems[current_index]):
+  _sync_exhibit_visibility()
+  return
  if not exhibit_enabled or not library_enabled or not is_instance_valid(library_view) or not is_instance_valid(model): return
  if library_view.ITEMS.is_empty(): return
  var selected: Dictionary = library_view.ITEMS[clampi(library_view.current_index,0,library_view.ITEMS.size()-1)]
@@ -693,6 +702,7 @@ func _rebuild_exhibit() -> void:
  _sync_exhibit_visibility()
 
 func _default_system_status() -> String:
+ if AtariBridge.handles(systems[current_index]): return AtariBridge.status_text()
  if is_instance_valid(exhibit) and exhibit.hardware_art_missing:
   return "Texturas do controle indisponíveis · sem emulação"
  return "Protótipo de seleção · sem emulação"
@@ -706,6 +716,8 @@ func _sync_exhibit_visibility() -> void:
   perspective_box_view.set_scene_active(scene_active)
  if is_instance_valid(status):
   status.visible = is_instance_valid(exhibit) and exhibit.hardware_art_missing and not inspect_mode and not history_open and history_blend <= 0.001 and library_state == "system"
+  if AtariBridge.handles(systems[current_index]):
+   status.visible = not inspect_mode and not history_open and history_blend <= 0.001 and library_state == "system"
   if status.visible: status.text = _default_system_status()
 
 func _update_perspective_box_frame() -> void:
@@ -934,6 +946,9 @@ func close_inspection() -> void:
  _layout()
 
 func toggle_inspection() -> void:
+ if AtariBridge.handles(systems[current_index]) and (not is_instance_valid(model) or not bool(model.get_meta("atari_media_available",false))):
+  status.text = "Console Atari indisponível para inspeção. Habilite explicitamente a mídia local."
+  return
  if _controller_blocks_background(): return
  if library_state != "system": return
  if not scene_active or not application_focused: return
@@ -1094,7 +1109,7 @@ func _input(event: InputEvent) -> void:
    get_viewport().set_input_as_handled()
   return
  if event is InputEventKey and event.pressed and event.echo:
-  var repeatable_navigation: bool = event.keycode in [KEY_LEFT,KEY_RIGHT,KEY_UP,KEY_DOWN] and event.keycode not in input_profile.keys.values()
+  var repeatable_navigation: bool = inspect_mode and event.keycode in [KEY_LEFT,KEY_RIGHT,KEY_UP,KEY_DOWN] and event.keycode not in input_profile.keys.values()
   var repeatable_zoom: bool = inspect_mode and event.keycode in [KEY_EQUAL,KEY_PLUS,KEY_KP_ADD,KEY_MINUS,KEY_KP_SUBTRACT] and event.keycode not in input_profile.keys.values()
   if not repeatable_navigation and not repeatable_zoom:
    get_viewport().set_input_as_handled()
@@ -1446,11 +1461,24 @@ func _build_library() -> void:
  library_view.begin_catalog_visit()
  library_view.exit_requested.connect(leave_library)
  library_view.hide()
+ sms_library_view = library_view
  entry_veil = ColorRect.new()
  entry_veil.color = Color(0.015,0.02,0.05,0)
  entry_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
  ui.get_parent().add_child(entry_veil)
  entry_veil.hide()
+
+func _activate_system_library() -> void:
+ if not library_enabled or not is_instance_valid(sms_library_view): return
+ if is_instance_valid(library_view): library_view.close()
+ if AtariBridge.handles(systems[current_index]):
+  if not is_instance_valid(atari_library_view):
+   atari_library_view = AtariBridge.create_library(ui.get_parent(),self)
+   atari_library_view.exit_requested.connect(leave_library)
+  library_view = atari_library_view
+ else:
+  library_view = sms_library_view
+ library_view.begin_catalog_visit()
 
 func enter_library() -> void:
  if _controller_blocks_background(): return
