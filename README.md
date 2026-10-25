@@ -167,3 +167,15 @@ teve mudança espontânea de processo do navegador, portanto não prova causalid
 Próximo passo: import limpo em ambiente estável e QA integrado completo em 4:3/16:9,
 seguido de Windows/controle físico. A fila completa de conversão e download não
 faz parte deste checkpoint.
+
+## Frontend integrado por ícones — cloud 2026-10-25
+
+Troféus, comentários e hubs abrem em painel dentro da biblioteca do jogo (Master System e Atari), preservando a apresentação 3D. As ações e menus usam ícones vetoriais locais, tooltip no foco/hover e acessibilidade; títulos, descrições, progresso confirmado, vínculos e avisos continuam legíveis como conteúdo. Voltar é hierárquico e restaura a linha/controle original. Filtros e nove ordenações, comentários somente leitura com paginação/retry, hubs parciais com filtro de console e separação Hardcore/Softcore estão implementados. Veja [contrato, estado e limites do frontend](docs/frontend-achievements.md).
+
+**Sem provider RA configurado:** o estado padrão é explicitamente não conectado. Não existem credenciais, progresso pessoal fabricado, comentários publicados ou download implícito. Fixtures de conquistas/comentários são apenas testes, sempre identificadas como sintéticas. Um catálogo local não prova ID RA ou edição.
+
+**Verificação deste incremento:** a fase de testes de `tools/verify_project.sh` terminou com código 0: 73 scripts Godot, cinco execuções de persistência em processos separados e duas auditorias Python (80 etapas, userdata Linux isolado). Os testes novos têm 85 verificações incluindo modos exatos (199/200 não é completo), erros/vazio/loading, stale async, retry da mesma página, foco, input held multi-dispositivo/eixos e scroll sem mouse. A fixture de PNG corrompido gera os três erros de decode esperados no teste de associação, que passa com 25 verificações. Correções nos testes antigos consultam acessibilidade em vez de captions removidos e usam catálogo SMS sintético explícito de 14 entradas.
+
+**QA visual:** matriz de renderer Godot real Linux/Mesa llvmpipe em 1152×648 e 1024×768, com troféus, comentários, hubs, membros, ordenação e biblioteca. Fixtures de dados visivelmente rotuladas como não pessoais; nenhuma comprovação de rede RA, controle físico, Windows ou GPU do usuário. Revisão independente de segurança/input e de pixels não identificou bloqueio P1 nessas superfícies.
+
+**Limite aberto de ambiente:** houve uma importação incremental bem-sucedida durante o desenvolvimento, mas tentativas finais `godot --headless --editor --quit` terminaram em 137 antes de diagnóstico, com e sem cache anterior. A causa não foi estabelecida; não é prova de OOM nem um clean-import PASS. O modo explícito `RETROPASS_SKIP_IMPORT=1` executa a fase de testes sem alegar aprovação da importação. Não confundir isso com o agregado integral. Código, testes de runtime e render foram validados separadamente; clean import permanece pendente.

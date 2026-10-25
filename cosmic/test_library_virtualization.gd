@@ -93,7 +93,7 @@ func run() -> void:
  var start := Time.get_ticks_usec()
  for repeat in 20: view.layout()
  var layout_ms := float(Time.get_ticks_usec()-start)/20000.0
- check(view.cards.size()==3 and view.all_buttons.size()<=15, "UI-control residency remains constant after navigation and inspection")
+ check(view.cards.size()==3 and view.all_buttons.size()==button_count and button_count<=16, "UI-control residency remains constant after navigation and inspection")
  scene.queue_free()
  await process_frame
  DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

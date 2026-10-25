@@ -57,8 +57,10 @@ func _run() -> void:
  view.action_buttons.next.show()
  view.action_buttons.next.disabled = false
  view.back_button.grab_focus()
- view.handle_event(_pad(JOY_BUTTON_DPAD_LEFT))
- _expect(root.gui_get_focus_owner() == view.action_buttons.next, "D-pad can reach contextual page action in inspection")
+ for index in 12:
+  view.handle_event(_pad(JOY_BUTTON_DPAD_LEFT))
+  if root.gui_get_focus_owner() == view.action_buttons.next: break
+ _expect(root.gui_get_focus_owner() == view.action_buttons.next, "D-pad can reach contextual page action with icon toolbar additions")
  for index in 100: view.handle_event(_key(KEY_UP))
  _expect(is_equal_approx(view.pivot.rotation.x,-1.3), "Inspection rotation remains bounded")
  view.handle_event(_pad(JOY_BUTTON_RIGHT_STICK))

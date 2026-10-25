@@ -65,7 +65,7 @@ static func decorate(button: Button) -> void:
  button.focus_mode = Control.FOCUS_ALL
  if not button.has_meta("focus_hint_hook"):
   button.set_meta("focus_hint_hook",true)
-  button.focus_entered.connect(func(): _show_focus_hint.call_deferred(button))
+  button.focus_entered.connect(func(): _show_focus_hint.call_deferred(weakref(button)))
   button.focus_exited.connect(func(): _hide_focus_hint(button))
   button.tree_exiting.connect(func(): _hide_focus_hint(button))
  button.add_theme_stylebox_override("normal",style(Color(0.04,0.07,0.13,0.86)))
@@ -105,7 +105,8 @@ static func _hide_focus_hint(button: Button) -> void:
  if is_instance_valid(hint): hint.queue_free()
  button.remove_meta("focus_hint")
 
-static func _show_focus_hint(button: Button) -> void:
+static func _show_focus_hint(reference: WeakRef) -> void:
+ var button := reference.get_ref() as Button
  if not is_instance_valid(button): return
  _hide_focus_hint(button)
  if not is_instance_valid(button) or not button.is_inside_tree() or not button.has_focus() or not button.is_visible_in_tree() or button.tooltip_text.is_empty(): return

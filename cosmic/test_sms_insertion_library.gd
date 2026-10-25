@@ -16,6 +16,15 @@ func check(value: bool, label: String) -> void:
  checks += 1
  if not value: failures.append(label)
 func run() -> void:
+ # Explicit catalog fixture: no dependency on a user inventory or private covers.
+ var previous_manifest := OS.get_environment("RETROPASS_BOX_ART_MANIFEST")
+ var fixture_path := "user://sms-insertion-fixture-%d.json" % Time.get_ticks_usec()
+ var fixture_items: Array = []
+ for index in 14: fixture_items.append({"id":"fixture_sms_%02d" % index,"title":"FIXTURE SMS %02d — SEM ROM/ARTE" % index})
+ var file := FileAccess.open(fixture_path,FileAccess.WRITE)
+ file.store_string(JSON.stringify({"items":fixture_items}))
+ file.close()
+ OS.set_environment("RETROPASS_BOX_ART_MANIFEST",ProjectSettings.globalize_path(fixture_path))
  var host := Host.new()
  root.add_child(host)
  var view := Library.new()
@@ -156,6 +165,8 @@ func run() -> void:
  host.free()
  await process_frame
  await test_main_dispatch()
+ OS.set_environment("RETROPASS_BOX_ART_MANIFEST",previous_manifest)
+ DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture_path))
  print("SMS insertion library checks=",checks," failures=",failures)
  quit(0 if failures.is_empty() else 1)
 
@@ -208,7 +219,7 @@ func test_main_dispatch() -> void:
  await process_frame
  await process_frame
  var action_label: Label = view.insert_button.find_child("ActionLabel",true,false)
- check(action_label != null and action_label.text=="Inserir" and view.insert_button.accessibility_name=="Inserir cartucho no console","Short visible insertion label retains full accessible action")
+ check(action_label != null and not action_label.visible and action_label.text=="Inserir" and view.insert_button.accessibility_name=="Inserir cartucho no console","Hidden insertion caption retains full accessible icon action")
  if view.insertion_active:
   for window_size in [Vector2i(1024,768),Vector2i(1152,648)]:
    root.size=window_size
