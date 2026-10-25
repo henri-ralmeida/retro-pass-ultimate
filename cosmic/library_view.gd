@@ -10,6 +10,18 @@ const BoxPresentation = preload("res://cosmic/box_presentation.gd")
 const CatalogWindow = preload("res://cosmic/library_window.gd")
 const CatalogChoice = preload("res://cosmic/catalog_choice.gd")
 const CatalogImport = preload("res://cosmic/catalog_import.gd")
+const VisitAutostart = preload("res://cosmic/visit_autostart.gd")
+const SmsInsertion = preload("res://cosmic/sms_insertion_session.gd")
+var autostart_intent := VisitAutostart.new()
+var insertion_session := SmsInsertion.new()
+var insertion_active := false
+var insertion_failed := false
+var insertion_rebuild := false
+var local_media_refresh_pending := false
+var insertion_status := ""
+var insert_button: Button
+var insertion_neighbor_rest: Array[Dictionary] = []
+var insertion_carousel_rest := Transform3D.IDENTITY
 var catalog_choice := CatalogChoice.new()
 var catalog_visit_started := false
 var catalog_window := CatalogWindow.new()
@@ -88,13 +100,16 @@ func _load_items(path_override: String = "") -> void:
  catalog_choice.update_catalog(ITEMS)
 
 func begin_catalog_visit() -> void:
- # A visit starts explicitly, never from redraw, focus, inspection or Back.
+ # Deliberate CONSOLE/catalog visit, separate from each menu-entry token.
+ # Redraw, focus, inspection, Back and reopening the same menu do not draw.
  catalog_choice.update_catalog(ITEMS)
  catalog_choice.end_visit()
  catalog_choice.begin_visit()
  catalog_visit_started = true
  var chosen := catalog_choice.get_selected_index()
- if chosen >= 0: _select(chosen)
+ if chosen >= 0:
+  if insertion_rebuild: current_index = chosen
+  elif chosen != current_index or not is_instance_valid(box) or box.item != ITEMS[chosen]: _select(chosen)
 
 const BOX_BOUNDS := AABB(Vector3(-0.87,-1.22,-0.15),Vector3(1.74,2.44,0.30))
 const DEFAULT_YAW := 0.40
@@ -237,10 +252,12 @@ func _build() -> void:
  reset_button = _mapped_button("reset","Restaurar","Restaurar o ângulo e o zoom da caixa",reset_inspection)
  motion_button = _mapped_button("motion","Pausar","Reduzir o movimento do fundo cósmico",_toggle_motion)
  back_button = _mapped_button("back","Voltar","Voltar ao Master System",go_back)
+ insert_button = _mapped_button("confirm","Inserir","Abrir a caixa e inserir o mesmo cartucho no console",start_insertion)
+ insert_button.accessibility_name = "Inserir cartucho no console"
  manual_button = _mapped_button("confirm","Manual","Ler o manual deste jogo",_open_manual)
  for state in ["normal","hover","pressed","disabled"]: manual_button.add_theme_stylebox_override(state,StyleBoxEmpty.new())
  manual_button.custom_minimum_size = Vector2(132,46)
- for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]: footer.add_child(button)
+ for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,motion_button,back_button]: footer.add_child(button)
  manual_reader = load("res://cosmic/manual_book_reader.gd").new()
  add_child(manual_reader)
  manual_reader.configure(host)
@@ -453,6 +470,8 @@ func _scan_was_cancelled() -> bool:
  return value
 
 func _choose_scan_folder() -> void:
+ if insertion_active or insertion_failed: return
+ cancel_pending_autostart()
  if scan_thread != null:
   _cancel_scan()
   disclosure.text = "Cancelando leitura… catálogo anterior preservado"
@@ -461,6 +480,7 @@ func _choose_scan_folder() -> void:
  scan_dialog.popup_centered()
 
 func _scan_folder(folder: String) -> void:
+ if insertion_active or insertion_failed: return
  if scan_thread != null: return
  var script = load("res://cosmic/collection_scan.gd")
  if script == null:
@@ -511,6 +531,8 @@ func _finish_scan() -> void:
  scan_button.grab_focus()
 
 func _exit_tree() -> void:
+ cancel_pending_autostart()
+ insertion_session.teardown()
  _reset_manual_release(false)
  presentation.teardown()
  if scan_thread != null:
@@ -521,6 +543,21 @@ func _exit_tree() -> void:
 func open() -> void:
  _build()
  if not built: return
+ if local_media_refresh_pending or insertion_rebuild or not is_instance_valid(box):
+  local_media_refresh_pending = false
+  insertion_rebuild = false
+  insertion_failed = false
+  if not is_instance_valid(camera):
+   camera = Camera3D.new()
+   camera.projection = Camera3D.PROJECTION_PERSPECTIVE
+   camera.fov = 32.0
+   camera.keep_aspect = Camera3D.KEEP_HEIGHT
+   camera.near = 0.01
+   camera.far = 20.0
+   camera.position = Vector3(0,0,8)
+   camera.current = true
+   pivot.get_parent().add_child(camera)
+  _select(current_index)
  visible = true
  _reset_presentation()
  cancel_drag()
@@ -531,6 +568,17 @@ func open() -> void:
  confirm_button.grab_focus()
 
 func close() -> void:
+ cancel_pending_autostart()
+ visible = false # Hide before force-teardown; normal Back always retraces.
+ if insertion_active or insertion_failed:
+  insertion_session.teardown()
+  _restore_insertion_neighbors()
+  insertion_active = false
+  if insertion_failed:
+   _discard_failed_insertion()
+   if viewport: viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+   return
+  if is_instance_valid(box): presentation.configure(box)
  _reset_manual_release()
  if scan_dialog: scan_dialog.hide()
  cancel_drag()
@@ -539,19 +587,22 @@ func close() -> void:
  if viewport: viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 func navigate(direction: int) -> void:
- if inspect_mode or approach_busy or not visible: return
+ if insertion_active or insertion_failed or inspect_mode or approach_busy or not visible: return
  var held := axis_navigation_held
  _select(posmod(current_index + direction,ITEMS.size()))
  axis_navigation_held = held
 
 func _select(index: int) -> void:
+ if insertion_active or insertion_failed: return
+ cancel_pending_autostart()
+ insertion_status = ""
  if inspect_mode or approach_busy or index < 0 or index >= ITEMS.size(): return
  _reset_manual_release()
  presentation.teardown()
  current_index = index
  if catalog_visit_started: catalog_choice.select_explicit(str(ITEMS[index].get("id", "")))
  var data: Dictionary = ITEMS[index]
- if box:
+ if is_instance_valid(box):
   pivot.remove_child(box)
   box.queue_free()
  var box_script = load("res://cosmic/game_box.gd")
@@ -632,12 +683,13 @@ func _build_neighbors() -> void:
  carousel.visible = true
 
 func _can_interact() -> bool:
- return not manual_framing_active and manual_release_direction == 0 and visible and built and host.get("application_focused") != false and host.get("scene_active") != false and not scan_dialog.visible
+ return not insertion_active and not insertion_failed and not manual_framing_active and manual_release_direction == 0 and visible and built and host.get("application_focused") != false and host.get("scene_active") != false and not scan_dialog.visible
 
 func _reduced_motion() -> bool:
  return host.get("reduced_motion") == true
 
 func toggle_inspection() -> void:
+ cancel_pending_autostart()
  if not _can_interact(): return
  if inspect_mode:
   go_back()
@@ -657,6 +709,7 @@ func _begin_inspection() -> void:
  confirm_button.grab_focus()
 
 func confirm_selected() -> void:
+ cancel_pending_autostart()
  if not _can_interact() or not presentation.available: return
  pending_confirm = true
  _begin_inspection()
@@ -688,10 +741,21 @@ func _apply_presentation_orientation() -> void:
 
 func _toggle_motion() -> void:
  if host.has_method("toggle_motion"): host.toggle_motion()
- if _reduced_motion(): _advance_presentation(0.0)
+ if _reduced_motion():
+  if insertion_active: advance_insertion(0.0)
+  else: _advance_presentation(0.0)
  refresh_controls()
 
 func go_back() -> void:
+ cancel_pending_autostart()
+ if insertion_failed:
+  close()
+  exit_requested.emit()
+  return
+ if insertion_active:
+  if not insertion_session.cancel(_reduced_motion()): _fail_insertion()
+  else: advance_insertion(0.0)
+  return
  if manual_framing_active:
   _start_manual_framing(manual_saved_zoom if manual_saved_zoom > 0 else manual_framing_from,false)
   return
@@ -720,6 +784,7 @@ func go_back() -> void:
   exit_requested.emit()
 
 func _reset_presentation() -> void:
+ if insertion_active or insertion_failed: return
  presentation.reset()
  inspect_mode = false
  approach_progress = 0.0
@@ -733,6 +798,7 @@ func _update_inspection_view() -> void:
  layout()
 
 func _advance_presentation(delta: float) -> void:
+ if insertion_active or insertion_failed: return
  if not _can_interact():
   cancel_drag()
   return
@@ -783,6 +849,7 @@ func _advance_presentation(delta: float) -> void:
  _update_inspection_view()
 
 func reset_inspection() -> void:
+ if insertion_active or insertion_failed: return
  if manual_framing_active or manual_release_direction != 0: return
  cancel_drag()
  if returning_to_carousel or approach_busy: return
@@ -796,6 +863,7 @@ func reset_inspection() -> void:
  _apply_rotation()
 
 func rotate_inspection(relative: Vector2) -> void:
+ if insertion_active or insertion_failed: return
  if manual_framing_active or manual_release_direction != 0: return
  if not inspect_mode or approach_busy or returning_to_carousel: return
  presentation_rotation_active = false
@@ -804,6 +872,7 @@ func rotate_inspection(relative: Vector2) -> void:
  _apply_rotation()
 
 func zoom_inspection(amount: float) -> void:
+ if insertion_active or insertion_failed: return
  if manual_framing_active or manual_release_direction != 0: return
  if not inspect_mode or approach_busy or returning_to_carousel: return
  zoom = clampf(zoom+amount,ZOOM_MIN,ZOOM_MAX)
@@ -818,11 +887,13 @@ func cancel_drag() -> void:
  if is_instance_valid(viewport_container): viewport_container.mouse_default_cursor_shape = Control.CURSOR_DRAG if inspect_mode else Control.CURSOR_ARROW
 
 func _apply_rotation() -> void:
+ if insertion_active or insertion_failed: return
  if not pivot: return
  pivot.basis = Basis(Vector3.UP,yaw) * Basis(Vector3.RIGHT,pitch)
  _frame_box()
 
 func _frame_box() -> void:
+ if insertion_active or insertion_failed or insertion_rebuild or not is_instance_valid(box) or not is_instance_valid(camera): return
  if not camera or viewport_container.size.y <= 0.0: return
  var ratio := viewport_container.size.x/maxf(viewport_container.size.y,1.0)
  var tangent := tan(deg_to_rad(camera.fov)*0.5)
@@ -863,12 +934,27 @@ func refresh_controls() -> void:
  var gamepad: bool = host.get("input_device") == "gamepad"
  var name_value: String = str(host.get("active_pad_name"))
  var profile = host.get("input_profile")
- for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
+ for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
   var action: String = button.get_meta("action","")
   var glyph = button.find_child("InputGlyph",true,false)
   if glyph and profile:
    glyph.symbol = profile.glyph(action,gamepad,name_value)
    glyph.family = profile.family(name_value) if gamepad else "keyboard"
+ if insertion_active or insertion_failed:
+  for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,motion_button]: button.visible = false
+  back_button.visible = true
+  back_button.disabled = false
+  scan_button.visible = false
+  previous_button.visible = false
+  next_button.visible = false
+  zoom_controls.visible = false
+  for card in cards: card.visible = false
+  help_label.text = insertion_status if insertion_failed else "Voltar: devolver o cartucho à caixa · sem execução"
+  mode_label.visible = false
+  _refresh_focus()
+  return
+ insert_button.visible = not inspect_mode
+ insert_button.disabled = not presentation.available
  var presented := presentation.state == &"presented" and not returning_to_carousel
  confirm_button.visible = not presented
  if is_instance_valid(manual_button):
@@ -897,6 +983,7 @@ func refresh_controls() -> void:
  help_label.text = "Arrastar / setas: girar · +/−: zoom" if inspect_mode else "←  →  selecionar jogo"
  if gamepad:
   help_label.text = "Analógico: girar · direito: zoom" if inspect_mode else "Direcional: selecionar jogo"
+ if not insertion_status.is_empty(): help_label.text = insertion_status
  mode_label.visible = false
  _refresh_focus()
 
@@ -1005,7 +1092,7 @@ func layout() -> void:
  help_label.size = Vector2(s.x-32,24)
  help_label.add_theme_font_size_override("font_size",13 if narrow else 14)
  # Five contextual actions fit at supported narrow widths without clipping.
- for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
+ for button in [confirm_button,insert_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
   button.custom_minimum_size.x = 132.0 if narrow else 144.0
   var label = button.find_child("ActionLabel",true,false)
   if label: label.add_theme_font_size_override("font_size",16 if narrow else 18)
@@ -1042,6 +1129,9 @@ func _draw() -> void:
 
 func _activate_focused() -> void:
  var focused := get_viewport().gui_get_focus_owner()
+ if insertion_active or insertion_failed:
+  if focused == back_button and back_button.is_visible_in_tree() and not back_button.disabled: go_back()
+  return
  if focused is Button and is_ancestor_of(focused) and focused.is_visible_in_tree():
   if focused.disabled: return
   # Collection cards represent the selected game; other explicit UI controls
@@ -1064,6 +1154,23 @@ func _move_focus(direction: int) -> void:
 
 func handle_event(event: InputEvent) -> bool:
  if not visible or not built: return false
+ if insertion_active or insertion_failed:
+  cancel_drag()
+  if host.get("application_focused") == false or host.get("scene_active") == false: return true
+  if event is InputEventKey and event.echo: return true
+  # GUI owns its enabled Back button; no pointer gesture reaches model writers.
+  if event is InputEventMouseMotion: return false
+  if event is InputEventMouseButton:
+   if event.button_index == MOUSE_BUTTON_LEFT:
+    if not event.pressed: return false # Complete an existing GUI press even outside.
+    if back_button.is_visible_in_tree() and not back_button.disabled and back_button.get_global_rect().has_point(event.position): return false
+   return true
+  var insertion_profile = host.get("input_profile")
+  var insertion_action: String = insertion_profile.action_for(event) if insertion_profile else ""
+  if insertion_action == "motion": _toggle_motion()
+  elif insertion_action == "back" or (event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE): go_back()
+  elif insertion_action == "confirm" or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER,KEY_KP_ENTER,KEY_SPACE]): _activate_focused()
+  return true
  if is_instance_valid(manual_reader) and manual_reader.visible:
   if host.get("application_focused") == false or host.get("scene_active") == false:
    manual_reader.cancel_drag()
@@ -1171,6 +1278,9 @@ func handle_event(event: InputEvent) -> bool:
  return false
 
 func _process(delta: float) -> void:
+ if insertion_active or insertion_failed:
+  if visible and insertion_active and not insertion_failed: advance_insertion(delta)
+  return
  if scan_thread != null and not scan_thread.is_alive() and not inspect_mode: _finish_scan()
  if not visible or not built: return
  if is_instance_valid(manual_reader) and manual_reader.visible: return
@@ -1399,3 +1509,113 @@ func _manual_closed() -> void:
  if is_instance_valid(viewport):
   viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if visible else SubViewport.UPDATE_DISABLED
  if visible and is_instance_valid(manual_button) and not manual_button.disabled: manual_button.grab_focus()
+
+
+# Optional host hook: the selection is drawn once, then media/geometry are gated.
+# A missing animation never substitutes another catalog entry or reads ROM bytes.
+func arm_entry_autostart() -> int:
+ if not catalog_visit_started: begin_catalog_visit()
+ return autostart_intent.arm(catalog_choice.get_selected_id())
+
+func cancel_pending_autostart() -> void:
+ autostart_intent.cancel()
+
+func complete_entry_autostart(token: int) -> bool:
+ if token != autostart_intent.generation: return false
+ if not visible or not _can_interact() or inspect_mode:
+  cancel_pending_autostart()
+  return false
+ if not autostart_intent.consume(token,catalog_choice.get_selected_id()): return false
+ return start_insertion()
+
+func start_insertion() -> bool:
+ if insertion_active or insertion_failed or not _can_interact() or inspect_mode or approach_busy or scan_thread != null: return false
+ cancel_pending_autostart()
+ if current_index < 0 or current_index >= ITEMS.size(): return false
+ cancel_drag()
+ presentation.teardown() # One pose writer: DualHinge session replaces single-hinge presentation.
+ var prepared: bool = insertion_session.prepare(box,camera,pivot.get_parent(),ITEMS[current_index],OS.get_environment("RETROPASS_SMS_MECHANICAL_PATCH"))
+ if not prepared:
+  insertion_status = "Inserção indisponível: " + insertion_session.last_error
+  insertion_session.teardown()
+  if is_instance_valid(box): presentation.configure(box)
+  refresh_controls()
+  return false
+ insertion_neighbor_rest.clear()
+ insertion_carousel_rest = carousel.transform
+ for neighbor in neighbor_boxes:
+  if is_instance_valid(neighbor): insertion_neighbor_rest.append({"node":neighbor,"pose":neighbor.transform})
+ insertion_active = true
+ insertion_status = ""
+ if not insertion_session.insert(_reduced_motion()):
+  _fail_insertion()
+  return false
+ _apply_insertion_neighbors()
+ refresh_controls()
+ back_button.grab_focus()
+ return true
+
+func advance_insertion(delta: float) -> void:
+ if not insertion_active or insertion_failed: return
+ var focused: bool = host.get("application_focused") != false and host.get("scene_active") != false
+ if focused and _reduced_motion():
+  var applied: bool = insertion_session.cancel(true) if insertion_session.target == 0.0 else insertion_session.insert(true)
+  if not applied:
+   _fail_insertion()
+   return
+ if not insertion_session.tick(delta,focused):
+  _fail_insertion()
+  return
+ _apply_insertion_neighbors()
+ if insertion_session.state == "closed":
+  insertion_session.teardown()
+  _restore_insertion_neighbors()
+  insertion_active = false
+  if is_instance_valid(box): presentation.configure(box)
+  insertion_status = ""
+  layout()
+  insert_button.grab_focus()
+
+func _fail_insertion() -> void:
+ insertion_failed = true
+ insertion_status = "Animação interrompida. Voltar para fechar a biblioteca."
+ cancel_pending_autostart()
+ cancel_drag()
+ refresh_controls()
+
+func _discard_failed_insertion() -> void:
+ # A lost node cannot be animated back. Hidden teardown is an explicit failure exit.
+ presentation.teardown()
+ if is_instance_valid(box):
+  if box.get_parent(): box.get_parent().remove_child(box)
+  box.queue_free()
+ box = null
+ if is_instance_valid(pivot): pivot.transform = Transform3D.IDENTITY
+ insertion_active = false
+ insertion_failed = false
+ insertion_rebuild = true
+ inspect_mode = false
+ approach_progress = 0.0
+ approach_target = 0.0
+ returning_to_carousel = false
+ pending_confirm = false
+ presentation_rotation_active = false
+
+func _apply_insertion_neighbors() -> void:
+ var weight: float = SmsInsertion.Path._ease(insertion_session.time / SmsInsertion.Path.REVEAL)
+ for record in insertion_neighbor_rest:
+  var neighbor: Variant = record.node
+  if not is_instance_valid(neighbor): continue
+  var rest: Transform3D = record.pose
+  neighbor.transform = rest
+  neighbor.position += Vector3(signf(rest.origin.x)*30.0*weight,0,0)
+ if is_instance_valid(carousel):
+  carousel.transform = insertion_carousel_rest
+  carousel.position.z -= 2.0*weight
+
+func _restore_insertion_neighbors() -> void:
+ for record in insertion_neighbor_rest:
+  var neighbor: Variant = record.node
+  if is_instance_valid(neighbor): neighbor.transform = record.pose
+ if is_instance_valid(carousel) and insertion_active: carousel.transform = insertion_carousel_rest
+ insertion_neighbor_rest.clear()

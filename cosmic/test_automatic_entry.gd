@@ -38,8 +38,11 @@ func run() -> void:
  main.set_process(false)
  main.reduced_motion=true
  var sms = main.library_view
+ var sms_patch := OS.get_environment("RETROPASS_SMS_MECHANICAL_PATCH")
+ OS.set_environment("RETROPASS_SMS_MECHANICAL_PATCH", "")
  main.enter_library()
- check(main.library_view==sms and not sms.has_method("complete_entry_autostart"),"SMS selection remains existing policy, no blocked geometry animation")
+ check(main.library_view==sms and sms.has_method("complete_entry_autostart") and not sms.insertion_active,"SMS hook consumes visit but missing geometry cannot animate or substitute media")
+ OS.set_environment("RETROPASS_SMS_MECHANICAL_PATCH", sms_patch)
  main.leave_library()
  main.navigate(1)
  var atari = main.library_view
