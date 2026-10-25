@@ -6,6 +6,7 @@ extends Node3D
 const BOX_SIZE := Vector3(1.74, 2.44, 0.30)
 const CORNER_RADIUS := 0.025
 const SURFACE_OFFSET := 0.001
+const LID_OPEN_DEGREES := 115.0
 
 var item: Dictionary = {}
 var item_id := "unavailable"
@@ -99,6 +100,7 @@ func _load_original(data: Dictionary) -> bool:
 	cartridge = source_cartridge
 	cartridge.transform = inside_pose
 	lid = source_box.find_child("BOX_LID_HINGE", true, false) as Node3D
+	_align_original_hinge_to_spine(source_box)
 	scene.free()
 	_restore_original_art(data)
 	original_model.rotation.x = PI*0.5
@@ -109,6 +111,43 @@ func _load_original(data: Dictionary) -> bool:
 	original_model.position -= bounds.get_center()
 	set_meta("original_room_geometry", true)
 	return true
+
+func _align_original_hinge_to_spine(source_box: Node3D) -> void:
+	# REV2's authored pivot is on the bottom of the case, 23 mm below the
+	# actual joint. Rotating it there detaches the lid despite correct parenting.
+	# Use the existing spine wall's outer top edge, already inside Lid_rim.
+	# Source units are metres: Case_wall spans x=-.068..-.064, y=.001..-.023;
+	# its bevel ends at x=-.0673 on the flat y=.023 top. That edge is the axis.
+	# This shared axis keeps the original molded parts touching at every angle;
+	# no invented hinge, remodeled shell, or floating artwork is introduced.
+	if not is_instance_valid(lid): return
+	var wall := source_box.find_child("Case_wall", true, false) as MeshInstance3D
+	var rim := lid.find_child("Lid_rim", true, false) as MeshInstance3D
+	if not wall or not rim or wall.get_parent() != source_box or rim.get_parent() != lid: return
+	var points := PackedVector3Array()
+	var top_y := -INF
+	for surface in wall.mesh.get_surface_count():
+		for vertex in wall.mesh.surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]:
+			var point: Vector3 = wall.transform * vertex
+			points.append(point)
+			top_y = maxf(top_y, point.y)
+	var outer_x := INF
+	for point in points:
+		if absf(point.y - top_y) < 0.0000001:
+			outer_x = minf(outer_x, point.x)
+	if not is_finite(outer_x): return
+	var joint := Vector3(outer_x, top_y, (wall.transform * wall.get_aabb()).get_center().z)
+	if not rim.get_aabb().grow(0.0000001).has_point((lid.transform * rim.transform).affine_inverse() * joint): return
+	var original_hinge := lid.transform
+	var corrected_hinge := Transform3D(lid.basis, joint)
+	var compensation := corrected_hinge.affine_inverse() * original_hinge
+	# Preserve every closed-pose vertex, including the front sleeve and clips.
+	for child in lid.get_children():
+		if child is Node3D: child.transform = compensation * child.transform
+	lid.transform = corrected_hinge
+	set_meta("source_hinge_origin", original_hinge.origin)
+	set_meta("corrected_hinge_origin", joint)
+	set_meta("hinge_pivot_repaired", true)
 
 func _restore_original_art(data: Dictionary) -> void:
 	var uv_path := str(data.get("uv_path", "res://assets/library_models/original_uv.json"))
@@ -192,13 +231,19 @@ func _mesh_bounds() -> AABB:
 func can_open() -> bool:
 	return is_instance_valid(lid)
 
+func set_lid_angle(angle_degrees: float) -> void:
+	# Immediate, bounded pose setter shared by inspection, QA, and animation.
+	# Opening/closing state and cartridge ownership remain with their callers.
+	if can_open() and is_finite(angle_degrees):
+		lid.rotation.z = deg_to_rad(clampf(angle_degrees, 0.0, LID_OPEN_DEGREES))
+
 func toggle_lid() -> void:
 	if not can_open(): return
 	opened = not opened
 	if not opened:
 		cartridge_out = false
 		cartridge.transform = inside_pose
-	lid.rotation.z = deg_to_rad(115.0) if opened else 0.0
+	set_lid_angle(LID_OPEN_DEGREES if opened else 0.0)
 
 func toggle_cartridge() -> void:
 	if not can_open(): return

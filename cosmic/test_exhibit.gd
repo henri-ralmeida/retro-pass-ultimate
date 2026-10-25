@@ -23,14 +23,14 @@ func run() -> void:
   var points: PackedVector3Array = exhibit.cable_paths[index]
   var anchor: Node3D = exhibit.pads[index].find_child("ControllerCableAnchor", true, false)
   check(points[0].distance_to(exhibit.relative_transform(anchor).origin)<0.0001,"Cable starts at actual pad anchor")
-  check(points[-1].distance_to(exhibit.socket_positions[index])<0.0001,"Cable ends at actual console socket")
+  check(points[-1].distance_to(exhibit.cable_exit_positions[index])<0.0001,"Cable ends at molded plug relief anchor")
   check((points[1]-points[0]).normalized().dot(exhibit.relative_transform(anchor).basis.x.normalized())>0.90,"Cable respects verified rear-entry tangent")
   for point in points:
    check(point.is_finite() and point.y>=0.0015,"Cable stays finite and above invisible presentation plane")
  var bounds: AABB = exhibit.get_local_bounds()
  print("EXHIBIT_BOUNDS ",bounds)
  print("EXHIBIT_SOCKETS ",exhibit.socket_positions)
- check(bounds.size.x<=0.801 and bounds.size.z<=0.521,"Assembly remains inside invisible layout footprint")
+ check(bounds.size.x<=0.801 and bounds.size.z<=0.571,"Full nominal-length cable assembly remains inside declared 0.801 × 0.571 m layout footprint")
  check(exhibit.configure(system), "Repeated configuration replaces rather than duplicates")
  check(exhibit.pads.size()==2 and exhibit.cables.size()==2,"Repeated configuration resets component arrays")
  var console_mesh_count: int = exhibit.console.find_children("*", "MeshInstance3D", true, false).size()

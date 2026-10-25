@@ -33,3 +33,6 @@
 # Python build caches
 __pycache__/
 *.py[cod]
+
+# Private original hardware artwork; not cleared for public redistribution.
+/assets/local_hardware_art/

@@ -3,9 +3,55 @@ extends Node3D
 ## configure(system, selected_item) retains the selected game's box/cartridge pairing.
 ## All dimensions are meters. Caller owns camera, light, UI and voluntary manipulation.
 const BoxScene = preload("res://cosmic/game_box.gd")
-const PAD_PATH := "res://assets/exhibit_models/SMS_Controller_neutral.glb"
+const CableRouting = preload("res://cosmic/controller_cable.gd")
+const HardwareMedia = preload("res://cosmic/hardware_media.gd")
+const ControllerConnector = preload("res://cosmic/controller_connector.gd")
 const CABLE_RADIUS := 0.0015
 const MANUAL_NOTICE := "Manual indisponível para esta edição. Nenhuma página substituta foi criada."
+const REFERENCE_EXPOSED_HEIGHT := 0.026 # Approximate reference-photo fit, not a hardware specification.
+const SLOT_CLIP_SHADER := """
+shader_type spatial;
+render_mode cull_disabled;
+uniform vec4 abs_color : source_color = vec4(0.02,0.02,0.02,1.0);
+uniform float abs_roughness = 0.65;
+uniform float abs_specular = 0.25;
+uniform float abs_metallic = 0.0;
+uniform bool use_normal = false;
+uniform sampler2D normal_map : hint_normal, filter_linear_mipmap_anisotropic;
+uniform float normal_strength = 0.65;
+uniform vec2 uv_scale = vec2(1.0);
+uniform vec2 uv_offset = vec2(0.0);
+uniform mat4 mesh_to_console;
+uniform vec3 slot_min;
+uniform vec3 slot_max;
+varying vec3 console_point;
+void vertex() {
+ console_point = (mesh_to_console*vec4(VERTEX,1.0)).xyz;
+ UV = UV*uv_scale+uv_offset;
+}
+void fragment() {
+ if (all(greaterThan(console_point,slot_min)) && all(lessThan(console_point,slot_max))) discard;
+ ALBEDO = abs_color.rgb;
+ METALLIC = abs_metallic;
+ ROUGHNESS = abs_roughness;
+ SPECULAR = abs_specular;
+ if (use_normal) {
+  NORMAL_MAP = texture(normal_map,UV).rgb;
+  NORMAL_MAP_DEPTH = normal_strength;
+ }
+}
+"""
+var slot_ready := false
+var connectors: Array[Node3D] = []
+var cable_exit_positions: Array[Vector3] = []
+var slot_well: MeshInstance3D
+var well_rest := Transform3D.IDENTITY
+var well_display := Transform3D.IDENTITY
+var dust_door_was_visible := true
+var slot_surfaces: Array[Dictionary] = []
+var slot_clip_min := Vector3.ZERO
+var slot_clip_max := Vector3.ZERO
+var original_slot_top := 0.0
 var inserted_cartridge: Node3D
 var dust_door: Node3D
 var dust_door_rest := Transform3D.IDENTITY
@@ -16,14 +62,23 @@ var game_box: Node3D
 var pads: Array[Node3D] = []
 var cables: Array[MeshInstance3D] = []
 var cable_paths: Array[PackedVector3Array] = []
+var cable_diagnostics: Array[Dictionary] = []
+var cable_jobs: Array[Dictionary] = []
 var socket_positions: Array[Vector3] = []
 var selected_item: Dictionary = {}
+var presentation_basis := Basis.IDENTITY
 var layout_offset := Vector3.ZERO
+var hardware_art_missing := false
 var manual_available := false
 var configuration_errors: Array[String] = []
 
 func _clear(item: Dictionary) -> void:
  _restore_dust_door()
+ slot_surfaces.clear()
+ slot_ready = false
+ connectors.clear()
+ cable_exit_positions.clear()
+ slot_well = null
  inserted_cartridge = null
  dust_door = null
  for child in get_children():
@@ -32,8 +87,12 @@ func _clear(item: Dictionary) -> void:
  pads.clear()
  cables.clear()
  cable_paths.clear()
+ cable_diagnostics.clear()
+ cable_jobs.clear()
  socket_positions.clear()
  configuration_errors.clear()
+ hardware_art_missing = false
+ set_meta("hardware_art_missing",false)
  game_box = null
  console = null
  selected_item = item.duplicate(true)
@@ -53,10 +112,11 @@ func configure(system: Resource, item: Dictionary = {}) -> bool:
  console.position += Vector3(0.025-console_bounds.get_center().x, -console_bounds.position.y, -0.075-console_bounds.get_center().z)
  return _populate(item)
 
-func configure_extras(existing_console: Node3D, item: Dictionary = {}) -> bool:
+func configure_extras(existing_console: Node3D, item: Dictionary = {}, view_basis: Basis = Basis.IDENTITY) -> bool:
  # Attach this module beside, not inside, the console's inspection pivot.
  # The caller hides this node during console-only inspection/history.
  _clear(item)
+ presentation_basis = view_basis.orthonormalized()
  console = existing_console
  if not is_instance_valid(console):
   configuration_errors.append("Existing console unavailable")
@@ -76,72 +136,180 @@ func _populate(item: Dictionary) -> bool:
   # Use the front surface rather than the recessed socket center.
   socket_center.z = (socket_transform * socket.get_aabb()).end.z + 0.001
   socket_positions.append(socket_center)
-  _controller(index, socket_center)
+  var connector := ControllerConnector.new()
+  connector.name = "MoldedControllerConnector%d" % (index+1)
+  add_child(connector)
+  if not connector.configure(socket_transform,socket.get_aabb(),CABLE_RADIUS,0.0056):
+   configuration_errors.append(connector.configuration_error)
+   continue
+  connectors.append(connector)
+  var cable_exit: Vector3 = connector.get_cable_exit_anchor()
+  cable_exit_positions.append(cable_exit)
+  _controller(index,cable_exit,connector.get_outward_tangent())
+ for job in cable_jobs: _route_controller_cable(job)
+ if cable_paths.size()==2 and CableRouting.minimum_between_paths(cable_paths[0],cable_paths[1])<CABLE_RADIUS*3.0:
+  configuration_errors.append("Controller cable lanes lack safe separation")
  if not item.is_empty():
   game_box = BoxScene.new()
   game_box.configure(item)
   add_child(game_box)
-  game_box.toggle_lid()
-  game_box.lid.rotation.z = deg_to_rad(70.0)
-  game_box.rotation = Vector3(-PI*0.5, PI, 0)
-  # Existing same-game model includes its matching cartridge, never another game.
-  game_box.scale = Vector3.ONE * (0.18 / 2.44)
-  var box_bounds := bounds_of(game_box)
-  game_box.position += Vector3(-0.245-box_bounds.get_center().x, -box_bounds.position.y, -0.095-box_bounds.get_center().z) + layout_offset
+  game_box.toggle_lid() # Preserve the original 115-degree hinge articulation.
+  # Undo GameBox's library display normalization, preserving exact native meters.
+  var native_factor: float = game_box.original_model.scale.x
+  game_box.scale = Vector3.ONE / native_factor
+  _place_open_box_behind_console(console_bounds)
   _seat_matching_cartridge()
  _add_exhibit_fill()
  return configuration_errors.is_empty()
+
+func _place_open_box_behind_console(console_bounds: AABB) -> void:
+ var front := game_box.find_child("Box_FRONT", true, false) as MeshInstance3D
+ if front == null:
+  configuration_errors.append("Original front-cover plane unavailable")
+  return
+ # Align the actual opened front-cover normal, not an arbitrary hinge angle.
+ # In the canonical rig, the portrait top remains +Y after library normalization.
+ var front_in_box := game_box.transform.affine_inverse() * relative_transform(front)
+ var normal := (front_in_box.basis * Vector3.UP).normalized()
+ var up := Vector3.UP
+ var right := up.cross(normal).normalized()
+ up = normal.cross(right).normalized()
+ var original_cover_frame := Basis(right, up, normal)
+ var uniform_scale: float = game_box.scale.x
+ game_box.basis = presentation_basis * original_cover_frame.inverse() * Basis.from_scale(Vector3.ONE*uniform_scale)
+ var cover_center := relative_transform(front) * front.get_aabb().get_center()
+ # The cover is behind the console in camera depth, above/left in screen space.
+ # Its lower portion may be occluded, while its portrait artwork stays authentic.
+ var target := console_bounds.get_center() - presentation_basis.z*0.26 - presentation_basis.x*0.095 + presentation_basis.y*0.075
+ game_box.position += target-cover_center
+ game_box.set_meta("background_cover_center", target)
+ game_box.set_meta("native_scale", 1.0)
 
 func _add_exhibit_fill() -> void:
  var fill := OmniLight3D.new()
  fill.name = "ExhibitSoftFill"
  fill.position = Vector3(-0.05,0.25,0.23) + layout_offset
- fill.light_color = Color("e2eaff")
- fill.light_energy = 0.65
+ fill.light_color = Color.WHITE
+ fill.light_energy = 0.20
  fill.omni_range = 0.8
  fill.omni_attenuation = 0.7
  fill.shadow_enabled = false
  add_child(fill)
 
 func _seat_matching_cartridge() -> void:
- var well := console.find_child("Cartridge_well", true, false) as MeshInstance3D
- dust_door = console.find_child("Cartridge_dust_door", true, false) as Node3D
- if well == null or dust_door == null or not is_instance_valid(game_box.cartridge):
+ var candidate_well := console.find_child("Cartridge_well", true, false) as MeshInstance3D
+ var candidate_door := console.find_child("Cartridge_dust_door", true, false) as Node3D
+ if candidate_well == null or candidate_door == null or not is_instance_valid(game_box.cartridge):
   configuration_errors.append("Verified cartridge rig or slot unavailable")
   return
- var well_bounds: AABB = relative_transform(well) * well.get_aabb()
- inserted_cartridge = game_box.cartridge
- inserted_cartridge.reparent(self, false)
- inserted_cartridge.transform = Transform3D.IDENTITY
- # Original cartridge rig is already in meters, upright, with label facing +Z.
- var cartridge_bounds := bounds_of(inserted_cartridge)
- if cartridge_bounds.size.x > well_bounds.size.x or cartridge_bounds.size.z > well_bounds.size.z:
-  configuration_errors.append("Selected cartridge does not fit verified slot footprint")
-  inserted_cartridge.reparent(game_box.original_model, false)
-  inserted_cartridge.transform = game_box.inside_pose
-  inserted_cartridge = null
-  return
- inserted_cartridge.position = Vector3(well_bounds.get_center().x-cartridge_bounds.get_center().x, well_bounds.end.y+0.0003-cartridge_bounds.position.y, well_bounds.get_center().z-cartridge_bounds.get_center().z)
- game_box.cartridge = null # There is one cartridge, moved from the open box, not copied.
- inserted_cartridge.set_meta("selected_game_id", str(selected_item.get("id", "unavailable")))
+ slot_well = candidate_well
+ dust_door = candidate_door
  dust_door_rest = dust_door.transform
  dust_door_display = dust_door_rest
- # Static depressed flap: preserve geometry and restore exact pose for inspection.
- # The source has a solid well floor; do not invent a deeper cavity or animation.
- dust_door_display.origin.y -= 0.006
- dust_door.transform = dust_door_display
- insertion_status = "Same-game cartridge seated above verified well floor; static display, not insertion simulation"
+ dust_door_was_visible = dust_door.visible
+ well_rest = slot_well.transform
+ well_display = well_rest
+ var console_frame := relative_transform(console)
+ var well_in_console := console_frame.affine_inverse()*relative_transform(slot_well)
+ var well_bounds: AABB = well_in_console*slot_well.get_aabb()
+ original_slot_top = well_bounds.end.y
+ inserted_cartridge = game_box.cartridge
+ var original_parent: Node = inserted_cartridge.get_parent()
+ var original_pose := inserted_cartridge.transform
+ inserted_cartridge.reparent(self, false)
+ inserted_cartridge.transform = Transform3D.IDENTITY
+ var cartridge_bounds := bounds_of(inserted_cartridge)
+ if cartridge_bounds.size.x > well_bounds.size.x or cartridge_bounds.size.z > well_bounds.size.z:
+  _abort_cartridge_seat("Selected cartridge does not fit verified slot footprint",original_parent,original_pose)
+  return
+ # The reference establishes a mostly concealed body, not an exact measurement.
+ # Keep the same native cartridge; expose an approximate 26 mm above the rim.
+ var seat := Vector3(well_bounds.get_center().x-cartridge_bounds.get_center().x, original_slot_top+REFERENCE_EXPOSED_HEIGHT-cartridge_bounds.end.y, well_bounds.get_center().z-cartridge_bounds.get_center().z)
+ var seated_bounds := AABB(cartridge_bounds.position+seat,cartridge_bounds.size)
+ slot_clip_min = Vector3(seated_bounds.position.x-0.001,seated_bounds.position.y-0.0015,seated_bounds.position.z-0.001)
+ slot_clip_max = Vector3(seated_bounds.end.x+0.001,original_slot_top+0.001,seated_bounds.end.z+0.001)
+ var lower := console.find_child("Lower_molded_shell",true,false) as MeshInstance3D
+ if lower == null:
+  _abort_cartridge_seat("Verified bottom shell unavailable",original_parent,original_pose)
+  return
+ var lower_bounds: AABB = console_frame.affine_inverse()*relative_transform(lower)*lower.get_aabb()
+ if slot_clip_min.y <= lower_bounds.position.y+0.001:
+  _abort_cartridge_seat("Requested seated depth would compromise original bottom shell",original_parent,original_pose)
+  return
+ if not _prepare_slot_clipping(console_frame):
+  _abort_cartridge_seat("",original_parent,original_pose)
+  return
+ inserted_cartridge.transform = console_frame*Transform3D(Basis.IDENTITY,seat)
+ # Move the existing floor below the cartridge, without modifying its mesh.
+ var floor_top := seated_bounds.position.y-0.0016
+ well_display.origin.y += floor_top-original_slot_top
+ game_box.cartridge = null # One original cartridge is moved, never cloned.
+ inserted_cartridge.set_meta("selected_game_id",str(selected_item.get("id","unavailable")))
+ insertion_status = "Original cartridge; approximately 26 mm exposed from photo reference. Reversible display-only slot clipping, not simulated mechanics."
+ slot_ready = true
+ _apply_slot_state(true)
+
+func _abort_cartridge_seat(reason: String, original_parent: Node, original_pose: Transform3D) -> void:
+ _apply_slot_state(false)
+ slot_ready = false
+ slot_surfaces.clear()
+ if is_instance_valid(inserted_cartridge):
+  inserted_cartridge.reparent(original_parent,false)
+  inserted_cartridge.transform = original_pose
+  game_box.cartridge = inserted_cartridge
+ inserted_cartridge = null
+ insertion_status = "Insertion unavailable; original cartridge remains in its box"
+ if not reason.is_empty(): configuration_errors.append(reason)
+
+func _prepare_slot_clipping(console_frame: Transform3D) -> bool:
+ var shader := Shader.new()
+ shader.code = SLOT_CLIP_SHADER
+ for node_name in ["Upper_faceted_shell","Lower_molded_shell"]:
+  var shell := console.find_child(node_name,true,false) as MeshInstance3D
+  if shell == null:
+   configuration_errors.append("Verified shell unavailable: "+node_name)
+   return false
+  for surface in shell.mesh.get_surface_count():
+   var source := shell.get_active_material(surface) as StandardMaterial3D
+   if source == null or source.albedo_texture != null or source.emission_enabled:
+    configuration_errors.append("Unsupported shell material; refusing to approximate "+node_name)
+    return false
+   var display := ShaderMaterial.new()
+   display.shader = shader
+   display.set_shader_parameter("abs_color",source.albedo_color)
+   display.set_shader_parameter("abs_roughness",source.roughness)
+   display.set_shader_parameter("abs_specular",source.metallic_specular)
+   display.set_shader_parameter("abs_metallic",source.metallic)
+   display.set_shader_parameter("use_normal",source.normal_enabled and source.normal_texture != null)
+   display.set_shader_parameter("normal_map",source.normal_texture)
+   display.set_shader_parameter("normal_strength",source.normal_scale)
+   display.set_shader_parameter("uv_scale",Vector2(source.uv1_scale.x,source.uv1_scale.y))
+   display.set_shader_parameter("uv_offset",Vector2(source.uv1_offset.x,source.uv1_offset.y))
+   display.set_shader_parameter("mesh_to_console",console_frame.affine_inverse()*relative_transform(shell))
+   display.set_shader_parameter("slot_min",slot_clip_min)
+   display.set_shader_parameter("slot_max",slot_clip_max)
+   slot_surfaces.append({"mesh":shell,"surface":surface,"original_override":shell.get_surface_override_material(surface),"source_material":source,"display_material":display,"original_mesh":shell.mesh})
+ return true
 
 func set_exhibit_visible(value: bool) -> void:
  visible = value
+ _apply_slot_state(value and is_instance_valid(inserted_cartridge))
+
+func _apply_slot_state(active: bool) -> void:
+ active = active and slot_ready
+ for record in slot_surfaces:
+  if is_instance_valid(record.mesh):
+   record.mesh.set_surface_override_material(record.surface,record.display_material if active else record.original_override)
+ if is_instance_valid(slot_well): slot_well.transform = well_display if active else well_rest
  if is_instance_valid(dust_door):
-  dust_door.transform = dust_door_display if value and is_instance_valid(inserted_cartridge) else dust_door_rest
+  dust_door.transform = dust_door_rest
+  dust_door.visible = false if active else dust_door_was_visible
 
 func _restore_dust_door() -> void:
- if is_instance_valid(dust_door): dust_door.transform = dust_door_rest
+ _apply_slot_state(false)
 
 func _exit_tree() -> void:
- _restore_dust_door()
+ _apply_slot_state(false)
 
 func relative_transform(node: Node3D) -> Transform3D:
  if is_inside_tree() and node.is_inside_tree():
@@ -172,10 +340,26 @@ func get_combined_bounds() -> AABB:
  var result := get_local_bounds()
  return result.merge(bounds_of(console)) if is_instance_valid(console) else result
 
-func _controller(index: int, socket: Vector3) -> void:
+func get_visible_world_corners() -> PackedVector3Array:
+ var points := PackedVector3Array()
+ var seen := {}
+ var roots: Array[Node3D] = [self]
+ if is_instance_valid(console): roots.append(console)
+ for root_node in roots:
+  for mesh in root_node.find_children("*","MeshInstance3D",true,false):
+   if mesh.mesh == null or not mesh.is_visible_in_tree() or seen.has(mesh.get_instance_id()): continue
+   seen[mesh.get_instance_id()] = true
+   var bounds: AABB = mesh.get_aabb()
+   for index in 8: points.append(mesh.global_transform*bounds.get_endpoint(index))
+ return points
+
+func _controller(index: int, socket: Vector3, socket_outward: Vector3 = Vector3.BACK) -> void:
  var document := GLTFDocument.new()
  var state := GLTFState.new()
- if document.append_from_file(ProjectSettings.globalize_path(PAD_PATH), state) != OK:
+ var controller_path: String = HardwareMedia.controller_path()
+ hardware_art_missing = hardware_art_missing or controller_path == HardwareMedia.FALLBACK_CONTROLLER
+ set_meta("hardware_art_missing",hardware_art_missing)
+ if document.append_from_file(ProjectSettings.globalize_path(controller_path), state) != OK:
   configuration_errors.append("Neutral controller unavailable")
   return
  var pad := document.generate_scene(state) as Node3D
@@ -183,6 +367,7 @@ func _controller(index: int, socket: Vector3) -> void:
   configuration_errors.append("Neutral controller could not be instantiated")
   return
  pad.name = "Controller%d" % (index+1)
+ pad.set_meta("source_model",controller_path)
  add_child(pad)
  pad.position = Vector3(-0.095 if index == 0 else 0.115, 0, 0.105) + layout_offset
  pads.append(pad)
@@ -193,30 +378,34 @@ func _controller(index: int, socket: Vector3) -> void:
  var anchor_transform := relative_transform(anchor)
  var start := anchor_transform.origin
  var tangent := anchor_transform.basis.x.normalized()
- var curve := Curve3D.new()
- curve.bake_interval = 0.002
- curve.add_point(start, Vector3.ZERO, tangent*0.026)
- # Separate slack lanes keep the cables clear of pad faces and game packaging.
- var slack: Vector3
- if tangent.z < -0.5:
-  slack = Vector3(-0.055 if index == 0 else 0.100, 0.004, 0.055) + layout_offset
-  curve.add_point(slack, Vector3(-0.014 if index == 0 else 0.014,0,0.012), Vector3(0.014 if index == 0 else -0.014,0,-0.008))
- else:
-  slack = Vector3(-0.030 if index == 0 else 0.235, 0.004, 0.232 if index == 0 else 0.222) + layout_offset
-  curve.add_point(slack, Vector3(0.025,0,0), Vector3(-0.025,0,-0.012))
- var approach := Vector3(socket.x, layout_offset.y+0.008, socket.z+0.020)
- curve.add_point(approach, Vector3(-0.010 if index == 0 else 0.010,0,0.008), Vector3(0,0,-0.008))
- curve.add_point(socket, Vector3(0,0,0.015), Vector3.ZERO)
- var points := PackedVector3Array()
- var length := curve.get_baked_length()
- for sample in 65: points.append(curve.sample_baked(length*sample/64.0, true))
+ cable_jobs.append({"index":index,"start":start,"tangent":tangent,"socket":socket,"outward":socket_outward})
+
+func _route_controller_cable(job: Dictionary) -> void:
+ var index: int = job.index
+ var guides := PackedVector3Array([Vector3(-0.23,0.004,0.35),Vector3(-0.005,0.004,0.35),Vector3(-0.005,0.008,0.12)]) if index==0 else PackedVector3Array([Vector3(0.055,0.004,0.34),Vector3(0.025,0.004,0.20),Vector3(0.038,0.008,0.10)])
+ for i in guides.size(): guides[i] += layout_offset
+ var obstacles: Array = []
+ for pad in pads: obstacles.append(bounds_of(pad))
+ for connector in connectors: obstacles.append(connector.get_parent_bounds())
+ var options := {"target_length":2.0,"radius":CABLE_RADIUS,"outer_radius_min":0.045,"outer_radius_max":0.100,"coil_center":Vector3(-0.13 if index==0 else 0.16,0.004,0.245)+layout_offset,"lead_out_guides":guides,"obstacles":obstacles}
+ if job.tangent.z < -0.5:
+  var incoming := PackedVector3Array([Vector3(-0.065,0.004,0.05),Vector3(-0.02,0.004,0.075),Vector3(-0.02,0.004,0.15)]) if index==0 else PackedVector3Array([Vector3(0.15,0.004,0.045),Vector3(0.21,0.004,0.075),Vector3(0.235,0.004,0.16)])
+  for i in incoming.size(): incoming[i] += layout_offset
+  options["lead_in_guides"] = incoming
+ var routing := CableRouting.new()
+ if not routing.build(job.start,job.tangent,job.socket,job.outward,options):
+  configuration_errors.append("Controller cable %d: %s" % [index+1,routing.error])
+  return
+ var points: PackedVector3Array = routing.points
+ cable_diagnostics.append(routing.diagnostics.duplicate(true))
  cable_paths.append(points)
  var cable := MeshInstance3D.new()
  cable.name = "ControllerCable%d" % (index+1)
  cable.mesh = _tube(points)
  var material := StandardMaterial3D.new()
- material.albedo_color = Color("101113")
- material.roughness = 0.72
+ material.albedo_color = Color("08090b")
+ material.roughness = 0.88
+ material.metallic_specular = 0.16
  material.cull_mode = BaseMaterial3D.CULL_DISABLED
  cable.material_override = material
  add_child(cable)

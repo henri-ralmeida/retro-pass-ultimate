@@ -78,6 +78,8 @@ var library_state := "system"
 var library_view
 var entry_tween: Tween
 var entry_progress := 0.0
+var entry_start_camera_position := Vector3.ZERO
+var entry_start_camera_target := Vector3.ZERO
 var entry_start_size := 0.28
 var entry_veil: ColorRect
 var entry_paused := false
@@ -526,6 +528,8 @@ func _layout() -> void:
  hint.add_theme_font_size_override("font_size",14 if compact else 17)
  status.position = Vector2(0,s.y*(0.838 if system_logo.visible else 0.815))
  status.size = Vector2(s.x,23)
+ if is_instance_valid(exhibit) and exhibit.hardware_art_missing:
+  status.position.y = s.y-132
  footer.position = Vector2(20,s.y-104)
  footer.size = Vector2(s.x-40,96)
  if settings_panel:
@@ -547,19 +551,25 @@ func _frame_model() -> void:
  _sync_exhibit_visibility()
  var data = systems[current_index]
  var ratio := viewport_container.size.x/maxf(viewport_container.size.y,1.0)
+ camera.position = data.camera_position
  camera.look_at(presentation.to_global(model_bounds.get_center()) if inspect_mode else data.camera_target)
  camera.keep_aspect = Camera3D.KEEP_HEIGHT
  camera.size = data.framing_size * maxf(1.0,1.8/ratio)
  if is_instance_valid(exhibit) and exhibit.visible:
-  normal_bounds = exhibit.get_combined_bounds()
-  var normal_center := presentation.to_global(normal_bounds.get_center())
-  camera.look_at(normal_center)
-  var normal_extent := Vector2.ZERO
-  for index in 8:
-   var corner := camera.global_basis.inverse() * (presentation.to_global(normal_bounds.get_endpoint(index))-normal_center)
-   normal_extent.x = maxf(normal_extent.x, absf(corner.x)*2.0)
-   normal_extent.y = maxf(normal_extent.y, absf(corner.y)*2.0)
-  camera.size = maxf(normal_extent.y, normal_extent.x/ratio)*1.10
+  normal_bounds = exhibit.get_combined_bounds() # Metadata only, not framing geometry.
+  var points: PackedVector3Array = exhibit.get_visible_world_corners()
+  var low := Vector2(INF,INF)
+  var high := Vector2(-INF,-INF)
+  for world_point in points:
+   var camera_point := camera.to_local(world_point)
+   low = low.min(Vector2(camera_point.x,camera_point.y))
+   high = high.max(Vector2(camera_point.x,camera_point.y))
+  if not points.is_empty():
+   var projected_center := (low+high)*0.5
+   # Pan in the approved view plane; do not rotate toward an imaginary AABB center.
+   camera.global_position += camera.global_basis*Vector3(projected_center.x,projected_center.y,0)
+   var actual_extent := high-low
+   camera.size = maxf(actual_extent.y,actual_extent.x/ratio)*1.10
  if inspect_mode:
   var extent := Vector2.ZERO
   var center := model_bounds.get_center()
@@ -619,14 +629,23 @@ func _rebuild_exhibit() -> void:
  exhibit = load("res://cosmic/exhibit_scene.gd").new()
  exhibit.name = "FloatingSelectedGameExhibit"
  presentation.add_child(exhibit)
- if not exhibit.configure_extras(model, selected):
+ var approved_view_basis := Basis.looking_at(systems[current_index].camera_target-systems[current_index].camera_position,Vector3.UP)
+ if not exhibit.configure_extras(model, selected, presentation.global_basis.inverse()*camera.get_parent().global_basis*approved_view_basis):
   push_warning("Exhibit incomplete: " + str(exhibit.configuration_errors))
  _sync_exhibit_visibility()
+
+func _default_system_status() -> String:
+ if is_instance_valid(exhibit) and exhibit.hardware_art_missing:
+  return "Texturas do controle indisponíveis · sem emulação"
+ return "Protótipo de seleção · sem emulação"
 
 func _sync_exhibit_visibility() -> void:
  if is_instance_valid(exhibit):
   var retain_during_entry := library_state == "entering" and not reduced_motion and entry_progress < 0.94
   exhibit.set_exhibit_visible(not inspect_mode and not history_open and history_blend <= 0.001 and (library_state == "system" or retain_during_entry))
+ if is_instance_valid(status):
+  status.visible = is_instance_valid(exhibit) and exhibit.hardware_art_missing and not inspect_mode and not history_open and history_blend <= 0.001 and library_state == "system"
+  if status.visible: status.text = _default_system_status()
 
 func _collect_bounds(node: Node3D) -> AABB:
  var result := AABB()
@@ -774,7 +793,7 @@ func close_history() -> void:
  mouse_dwell_rearm_allowed = false
  reset_dwell()
  hint.text = "Clique no console ou pressione Enter para selecionar"
- status.text = "Protótipo de seleção · sem emulação"
+ status.text = _default_system_status()
  _set_action_label(inspect_button,"Inspecionar")
  inspect_button.tooltip_text = "Inspecionar em 3D · arraste para girar · I"
  console_button.grab_focus()
@@ -819,7 +838,7 @@ func close_inspection() -> void:
  _set_action_label(inspect_button,"Inspecionar")
  inspect_button.tooltip_text = "Inspecionar em 3D · arraste para girar · I"
  hint.text = "Clique no console ou pressione Enter para selecionar"
- status.text = "Protótipo de seleção · sem emulação"
+ status.text = _default_system_status()
  console_button.grab_focus()
  auto_history_armed = false
  mouse_dwell_rearm_allowed = false
@@ -1167,6 +1186,8 @@ func enter_library() -> void:
  library_state = "entering"
  _sync_exhibit_visibility()
  entry_start_size = camera.size
+ entry_start_camera_position = camera.position
+ entry_start_camera_target = camera.position-camera.basis.z*camera.position.distance_to(systems[current_index].camera_target)
  presentation.position = Vector3.ZERO
  ui.hide()
  entry_veil.show()
@@ -1186,8 +1207,8 @@ func _apply_entry(value: float) -> void:
  var exhibit_layout := is_instance_valid(exhibit)
  viewport_container.position = Vector2(s.x*0.08,s.y*(0.10 if exhibit_layout else 0.18)).lerp(Vector2.ZERO,value)
  viewport_container.size = Vector2(s.x*0.84,s.y*(0.53 if exhibit_layout else 0.44)).lerp(s,value)
- camera.position = data.camera_position.lerp(Vector3(0.035,0.07,0.16),value)
- camera.look_at(data.camera_target)
+ camera.position = entry_start_camera_position.lerp(Vector3(0.035,0.07,0.16),value)
+ camera.look_at(entry_start_camera_target.lerp(data.camera_target,value))
  camera.size = lerpf(entry_start_size,0.038,value)
  entry_veil.color.a = smoothstep(0.48,0.94,value)
 
