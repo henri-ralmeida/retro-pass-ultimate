@@ -1,0 +1,165 @@
+{
+  "repair_date_utc": "2026-10-25",
+  "reference_page": "https://iansretromuseum.co.uk/consoles/mastersystem/",
+  "reference_close_up": "https://iansretromuseum.co.uk/consoles/mastersystem/gfx1/l10.jpg",
+  "reference_use": "Visual shape reference only; no photo pixels or third-party model copied. Dimensions are estimated to fit the supplied mesh, not measured engineering data.",
+  "diagnosis": "Original card recess had a lower lip but no continuous inner floor; an uninterrupted fascia seam floated across it. The real console has a recessed tray and a narrow slit near its rear floor.",
+  "source_glb_sha256": "7383c505ec6ab0b9ca15088df66838d94712b7ff657eb4b215cfc31652595e27",
+  "output_glb_sha256": "3a15c855ab5ed558ba8d22fc631d0775e0d1a25749e0e8a4e6afefe66156193e",
+  "source_blend_sha256": "43c6568b9962b90a46a6225207bd93c4cee21a57a2eee9b87b6d682accfce0df",
+  "output_blend_sha256": "308f87ec6a686efb090dcc651e23a923d7291b4394266beb110a97baab53fa6d",
+  "existing_glb_binary_prefix_unchanged": true,
+  "existing_mesh_buffers_normals_uvs_unchanged": true,
+  "existing_blend_meshes_normals_uvs_unchanged": true,
+  "existing_materials_images_textures_unchanged": true,
+  "changed_original_object_transforms": [
+    "Front_parting_seam"
+  ],
+  "added_objects": [
+    "Card_slot_recess_floor",
+    "Card_slot_rear_guide",
+    "Front_parting_seam_card_right"
+  ],
+  "new_bounds_blender_m": {
+    "Card_slot_recess_floor": [
+      [
+        0.05180000141263008,
+        -0.08470000326633453,
+        -0.0243500005453825
+      ],
+      [
+        0.11219999939203262,
+        -0.06589999794960022,
+        -0.022549999877810478
+      ]
+    ],
+    "Card_slot_rear_guide": [
+      [
+        0.05220000073313713,
+        -0.07147660851478577,
+        -0.02019999921321869
+      ],
+      [
+        0.11180000007152557,
+        -0.06732339411973953,
+        -0.0012000000569969416
+      ]
+    ]
+  },
+  "blender_to_godot": "(x, y, z) -> (x, z, -y)",
+  "bounds_before_blender_m": [
+    [
+      -0.18439999222755432,
+      -0.09357500821352005,
+      -0.030000003054738045
+    ],
+    [
+      0.18439999222755432,
+      0.09357500076293945,
+      0.030000003054738045
+    ]
+  ],
+  "bounds_after_blender_m": [
+    [
+      -0.18439999222755432,
+      -0.09357500821352005,
+      -0.030000003054738045
+    ],
+    [
+      0.18439999222755432,
+      0.09357500076293945,
+      0.030000003054738045
+    ]
+  ],
+  "bounds_unchanged": true,
+  "nominal_slot_height_m": 0.00235,
+  "glb_image_sha256_before": {
+    "master_system_atlas_4k": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c",
+    "master_system_wordmark_4k": "a0dbaf4ae4c0f973b3f5648f85f996ae420bf1a8c1b2cc96facb12a4546f944d",
+    "SMS_Assembly_abs_grain_normal": "3849a2f3313c6ff8e231f31e05df0bf72bc3e7eb4767f10f50a71c49c65597c5"
+  },
+  "glb_image_sha256_after": {
+    "master_system_atlas_4k": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c",
+    "master_system_wordmark_4k": "a0dbaf4ae4c0f973b3f5648f85f996ae420bf1a8c1b2cc96facb12a4546f944d",
+    "SMS_Assembly_abs_grain_normal": "3849a2f3313c6ff8e231f31e05df0bf72bc3e7eb4767f10f50a71c49c65597c5"
+  },
+  "blend_images": [
+    {
+      "name": "abs_grain_normal",
+      "packed_sha256": "3849a2f3313c6ff8e231f31e05df0bf72bc3e7eb4767f10f50a71c49c65597c5",
+      "size": [
+        512,
+        512
+      ],
+      "filepath": "//../MasterSystem_Console_SMS_Assembly_abs_grain_normal.png"
+    },
+    {
+      "name": "master_system_atlas_4k",
+      "packed_sha256": "69bf4af353ccf3dff150f83d4d27aa3761c451aa8d7740f3e3a03fbba5e9142c",
+      "size": [
+        4096,
+        4096
+      ],
+      "filepath": "//../source_art/raster/master_system_atlas_4k.png"
+    },
+    {
+      "name": "master_system_wordmark_4k",
+      "packed_sha256": "a0dbaf4ae4c0f973b3f5648f85f996ae420bf1a8c1b2cc96facb12a4546f944d",
+      "size": [
+        4096,
+        336
+      ],
+      "filepath": "//../source_art/raster/master_system_wordmark_4k.png"
+    }
+  ],
+  "mesh_objects": 184,
+  "triangles": 29458,
+  "verification": "Saved and reopened Blend; parsed GLB, compared original BIN prefix, existing mesh primitives, material/image tables and image hashes. Offline renders separate from Godot tests.",
+  "verified_original_node_transform_changes": [
+    [
+      "Front_parting_seam",
+      "translation",
+      [
+        0,
+        -0.008100003004074097,
+        0.08947505056858063
+      ],
+      [
+        -0.0655,
+        -0.008100003004074097,
+        0.08947505056858063
+      ]
+    ],
+    [
+      "Front_parting_seam",
+      "scale",
+      null,
+      [
+        0.6420765027322404,
+        1,
+        1
+      ]
+    ]
+  ],
+  "floor_ray_validation": {
+    "method": "Fifteen downward rays at five X positions and three interior Y positions, below the upper shell.",
+    "before_hits": 0,
+    "after_hits": 15,
+    "after_hit_object": "Card_slot_recess_floor",
+    "total_rays": 15
+  },
+  "offline_visual_validation": {
+    "engine": "Blender 4.3.2 Cycles CPU",
+    "views": [
+      "front/right close-up",
+      "near-front close-up",
+      "whole-console front/right",
+      "left close-up",
+      "low front close-up"
+    ],
+    "same_camera_and_lighting_before_after": true,
+    "inspected_actual_render_pixels": true,
+    "reference_compared": "Ian Hill card-slot close-up, link above",
+    "limits": "Offline geometry evidence only, not Godot runtime or Windows/GPU QA."
+  }
+}

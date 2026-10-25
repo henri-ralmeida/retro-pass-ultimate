@@ -1,6 +1,6 @@
 MASTER SYSTEM — MODELO DE APRESENTAÇÃO
 
-MasterSystem_Console.glb: somente o console construído nas etapas anteriores do projeto. Geometria, normais, UVs e transformações preservadas. Imagens de inscrições foram substituídas por reconstrução vetorial 4K; veja ../source_art/ATTRIBUTION.txt. Não contém a foto de loja nem seu letreiro raster derivado. O normal map procedural original foi preservado.
+MasterSystem_Console.glb: somente o console construído nas etapas anteriores do projeto. A revisão das inscrições preservou geometria, normais, UVs e transformações; a correção posterior do encaixe de cartão é descrita abaixo. Imagens de inscrições foram substituídas por reconstrução vetorial 4K; veja ../source_art/ATTRIBUTION.txt. Não contém a foto de loja nem seu letreiro raster derivado. O normal map procedural original foi preservado.
 
 Pivô central, metros, frente +Z e cima +Y no Godot. Controles, cabo, cartucho e caixa foram excluídos apenas desta apresentação; o arquivo original permanece intacto fora do repositório público.
 
@@ -9,3 +9,31 @@ MasterSystem_Console_EDITABLE.blend: editável no Blender 4.3.2, originalmente c
 A pasta source_blender tem .gdignore para o Godot não invocar Blender na importação. Câmera e três luzes de conferência estão no .blend, não no GLB. Renders Blender não são capturas da aplicação Godot.
 
 MODEL_AUDIT.json contém dimensões, contagens, imagens atuais e limitações. ../source_art/BLEND_REPLACEMENT_AUDIT.json confirma que geometria/normais/UVs/transforms não mudaram. ../source_art/GLB_REPLACEMENT_AUDIT.json comprova remoção das imagens anteriores do BIN. Não há benchmark de desempenho.
+
+CORREÇÃO DO REBAIXO CARD INPUT — 25/10/2026
+
+A cavidade tinha um lábio frontal sem piso contínuo até o fundo e uma emenda
+flutuando por sua abertura. Foram criados dois meshes próprios: piso interno
+Card_slot_recess_floor e guia traseira inclinada Card_slot_rear_guide. A emenda
+Front_parting_seam foi encurtada à esquerda, com uma instância à direita
+Front_parting_seam_card_right. A boca recuada permanece aberta: há uma fenda
+horizontal de 2,35 mm entre guia e piso, não um tampão no plano frontal.
+
+A foto física consultada foi https://iansretromuseum.co.uk/consoles/mastersystem/gfx1/l10.jpg
+Página e autoria: https://iansretromuseum.co.uk/consoles/mastersystem/ (Ian Hill).
+Uso apenas como referência visual. Nenhum pixel da foto, textura derivada
+ou modelo 3D de terceiros foi incorporado. A geometria foi construída por
+coordenadas próprias para se ajustar à carcaça existente. Dimensões estimadas,
+não medidas no aparelho; não é CAD de engenharia nem fidelidade certificada.
+
+repair_card_recess.py reproduz a mudança a partir dos arquivos anteriores.
+O GLB é ampliado diretamente: todos os buffers existentes, imagens, materiais
+e UVs permanecem byte a byte. No Blend, todos os meshes originais conservam
+topologia, normais e UVs; só a transformação da emenda muda. CARD_RECESS_REPAIR_AUDIT.json
+registra hashes antes/depois, bounds invariantes, novos objetos e reabertura
+do editável. As três imagens continuam empacotadas, incluindo os fontes 4K.
+Os backups anteriores permanecem privados e fora do repositório público.
+
+As auditorias de source_art registram a etapa anterior de reconstrução vetorial,
+não alegam que o conjunto final continua com exatamente a mesma geometria.
+Renders comparativos offline não substituem importação e teste no Godot.

@@ -9,3 +9,4 @@ for name in selection history inspection focus_visibility controls controls_prop
 done
 cd "$ROOT"
 python3 tools/audit_public_assets.py
+python3 tools/test_card_recess.py

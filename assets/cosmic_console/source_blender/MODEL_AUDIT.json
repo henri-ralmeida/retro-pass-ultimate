@@ -9,8 +9,8 @@
     "box",
     "Controller_cable"
   ],
-  "mesh_objects": 181,
-  "triangles": 29054,
+  "mesh_objects": 184,
+  "triangles": 29458,
   "materials": [
     "ABS_molded_black",
     "ABS_satin_bezel",
@@ -31,19 +31,19 @@
   ],
   "dimensions_m_blender": [
     0.36879998445510864,
-    0.1871500015258789,
+    0.1871500089764595,
     0.06000000610947609
   ],
   "bounds_centered_blender": [
     [
       -0.18439999222755432,
-      -0.09357500076293945,
+      -0.09357500821352005,
       -0.030000003054738045
     ],
     [
       0.18439999222755432,
       0.09357500076293945,
-      0.030000001192092896
+      0.030000003054738045
     ]
   ],
   "front_axis_blender": "-Y",
@@ -101,5 +101,20 @@
   ],
   "texture_restoration": "Replaced photographic decal images with newly drawn vector artwork rendered at 4K. Removed all unused packed images. Reopened and hashed unchanged geometry/normals/UVs/transforms.",
   "proof_render": "Blender Cycles 64 samples CPU, no denoise; NOT Godot evidence",
-  "inscription_audit": "../source_art/BLEND_REPLACEMENT_AUDIT.json"
+  "inscription_audit": "../source_art/BLEND_REPLACEMENT_AUDIT.json",
+  "card_recess_repair": {
+    "date_utc": "2026-10-25",
+    "audit": "CARD_RECESS_REPAIR_AUDIT.json",
+    "script": "repair_card_recess.py",
+    "reference": "https://iansretromuseum.co.uk/consoles/mastersystem/gfx1/l10.jpg",
+    "changes": "Added a continuous inner floor and a sloped rear guide; split the fascia seam at the recess. Existing shell, mesh topology, normals, UVs, materials and 4K image bytes preserved; only the seam transform is shortened.",
+    "slot_height_m": 0.00235,
+    "limits": "Original visual reconstruction fitted to the existing model, not measured CAD. A real recessed card slit remains. Reference photo pixels are not included.",
+    "bounds_unchanged": true,
+    "new_geometry_objects": [
+      "Card_slot_recess_floor",
+      "Card_slot_rear_guide",
+      "Front_parting_seam_card_right"
+    ]
+  }
 }
