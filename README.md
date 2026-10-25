@@ -76,7 +76,7 @@ Não incluir jogos, saves, credenciais, caches, builds ou mídias pessoais neste
 
 ## Próximos incrementos de configuração
 
-O guia opcional de mídia local já está disponível pela ação Mídia local: sistema, raiz e categorias explícitas, com Pular e Configurar depois. Ele conta arquivos separadamente de jogos e associa somente referências locais validadas, conforme os limites do checkpoint abaixo. Permanecem pendentes o tour automático no primeiro uso, a fila completa de conversão/preparação e a obtenção online. Nenhum fluxo baixa ROMs.
+O guia opcional de mídia local já está disponível pela ação Mídia local: sistema, raiz e categorias explícitas, com Pular e Configurar depois. Ele conta arquivos separadamente de jogos e associa somente referências locais validadas, conforme os limites do checkpoint abaixo. O tour opcional no primeiro uso e a persistência dos vínculos exatos estão implementados; permanecem pendentes a fila completa de conversão/preparação e a obtenção online. Veja [mídias persistentes e tour](docs/MIDIAS_PERSISTENCIA_TOUR.md). Nenhum fluxo baixa ROMs.
 
 Revisão do controle 3D: corrigido fechamento inesperado após clicar Voltar durante Testar entradas e salvar depois. Cobertura adicional de layout P1/P2/conflitos em 16:9 e 4:3; o visual/modelo aprovado permanece inalterado. Windows e gamepads físicos continuam pendentes.
 
@@ -104,7 +104,9 @@ A biblioteca pode abrir a caixa com dois eixos, extrair seu próprio cartucho e 
 
 Veja [contrato e limites](docs/SMS_INSERTION.md). Geometria derivada, bindings de mídia, caches e evidências permanecem privados.
 
-## Mídia local opcional — integração de sessão
+## Mídia local opcional — checkpoint anterior de integração de sessão
+
+> Histórico: o limite de sessão deste checkpoint foi substituído pelo overlay privado revalidado descrito em [Mídias persistentes e tour](docs/MIDIAS_PERSISTENCIA_TOUR.md). Os demais limites explícitos de download/PDF continuam válidos.
 
 O botão **Mídia local** no HOME abre um guia opcional. Nada é selecionado por
 padrão: escolha sistema, raiz absoluta e categorias; **Pular** e **Configurar
@@ -179,3 +181,24 @@ Troféus, comentários e hubs abrem em painel dentro da biblioteca do jogo (Mast
 **QA visual:** matriz de renderer Godot real Linux/Mesa llvmpipe em 1152×648 e 1024×768, com troféus, comentários, hubs, membros, ordenação e biblioteca. Fixtures de dados visivelmente rotuladas como não pessoais; nenhuma comprovação de rede RA, controle físico, Windows ou GPU do usuário. Revisão independente de segurança/input e de pixels não identificou bloqueio P1 nessas superfícies.
 
 **Limite aberto de ambiente:** houve uma importação incremental bem-sucedida durante o desenvolvimento, mas tentativas finais `godot --headless --editor --quit` terminaram em 137 antes de diagnóstico, com e sem cache anterior. A causa não foi estabelecida; não é prova de OOM nem um clean-import PASS. O modo explícito `RETROPASS_SKIP_IMPORT=1` executa a fase de testes sem alegar aprovação da importação. Não confundir isso com o agregado integral. Código, testes de runtime e render foram validados separadamente; clean import permanece pendente.
+
+## Vínculos de mídia persistentes e tour opcional
+
+O overlay privado agora preserva associações exatas entre reinícios, revalidando
+bytes/identidade em worker sem varrer pastas. Erros de revalidação revertem a
+superfície tentada, em vez de manter um vínculo obsoleto. O tour de primeiro uso é
+opcional, respeita Pular/Depois/interrupção e pode ser reaberto pelo ícone. Controles
+seguem o shell navy e os ícones vetoriais, com foco e nomes acessíveis.
+
+**Verificado em 25/10/2026:** fase tests-only do verificador com exit 0: 77 scripts
+Godot e nove execuções de persistência em processos separados (86 processos),
+mais duas auditorias Python. Novas verificações: 45 de overlay/worker/rollback,
+24 do tour, sete de restauração no host e seis da integração do tour na main.
+Renderização real Mesa/llvmpipe da cena completa concluída em 1152×648 e 1024×768,
+com dados fictícios; Depois e reabertura também conferidos. Revisões independentes
+de código e aparência não identificaram bloqueadores restantes nesse escopo.
+
+Isso **não** é um PASS de importação limpa: permanece o limite cloud de importação
+editor anteriormente documentado; os testes usaram cache. Não houve validação no
+Windows, download online, conversão de PDF ou galeria nova de imagens genéricas.
+Veja o contrato e os limites em [Mídias persistentes e tour](docs/MIDIAS_PERSISTENCIA_TOUR.md).
