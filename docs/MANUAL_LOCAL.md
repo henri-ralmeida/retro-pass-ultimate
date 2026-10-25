@@ -30,7 +30,7 @@ O leitor mantém navegação por páginas, zoom, deslocamento da página ampliad
 - Dimensões até 4096×4096, verificadas antes da decodificação.
 - Cache limitado por estado: até seis texturas/24 MiB no livro e duas/64 MiB no zoom. Overhead do driver/GPU e decodificação é adicional.
 - Zoom de 1× a 4×. A ampliação não recupera detalhe inexistente na digitalização.
-- PDF não é decodificado nesta etapa. Um campo `manual_pdf` sem páginas de imagem é informado como não suportado.
+- PDF não é decodificado nesta etapa. Um campo `manual_pdf` sem páginas de imagem é informado como não suportado. A fila local agora informa a capability indisponível sem abrir PDFs; veja [fronteira segura e diagnóstico sintético](MANUAIS_PDF.md).
 - Os originais não são regravados, reduzidos ou publicados.
 
 ## Procedência
