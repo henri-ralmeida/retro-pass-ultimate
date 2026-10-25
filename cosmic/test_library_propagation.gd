@@ -92,14 +92,14 @@ func run() -> void:
 
  # Mapped actions and built-in alternatives activate once, not once per route.
  await tap_key(KEY_C)
- check(library.inspect_mode and scene.selection_count == 1, "Mapped confirmation activates focused library inspection exactly once")
+ check(library.inspect_mode and scene.selection_count == 1, "Mapped confirmation approaches and opens the selected box exactly once")
  await send(key(KEY_C, true, true))
  check(library.inspect_mode, "Mapped confirmation echo cannot toggle inspection again")
  await send(key(KEY_C, false))
  await tap_key(KEY_ENTER)
- check(not library.inspect_mode, "Enter activates the focused library control exactly once")
+ check(library.inspect_mode and library.presentation.state == &"presented", "Enter on focused Confirm is idempotent, not an inspection toggle")
  await send(key(KEY_ENTER, true, true))
- check(not library.inspect_mode, "Enter echo is consumed before native GUI activation")
+ check(library.inspect_mode and library.presentation.state == &"presented", "Enter echo is consumed before native GUI activation")
  await send(key(KEY_ENTER, false))
  await tap_key(KEY_SPACE)
  check(library.inspect_mode, "Space remains a single-activation library alternative")
@@ -157,6 +157,10 @@ func run() -> void:
  else:
   check(not library.cards[0].visible and library.scan_button.is_visible_in_tree(), "Single-entry collection avoids redundant cards and keeps real scan control")
 
+ # This section isolates input propagation at reduced-motion endpoints. The
+ # focused motion-button check above may have enabled animated presentation;
+ # intermediate transition timing is covered in test_library_presentation.
+ scene.reduced_motion = true
  # Focus loss cancels drag and cached analog motion; input cannot leak to GUI.
  await tap_key(KEY_Q)
  check(library.inspect_mode, "Inspection opens before lifecycle input checks")

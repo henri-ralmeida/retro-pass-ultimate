@@ -45,14 +45,16 @@ func _assert_framing(view: Control, label: String) -> void:
  var high := Vector2(-INF,-INF)
  var viewport_size: Vector2 = Vector2(view.viewport.size)
  var depth_ok := true
- for index in range(8):
-  var corner: Vector3 = view.pivot.to_global(view.model_bounds.get_endpoint(index))
-  var projected: Vector2 = view.camera.unproject_position(corner)/viewport_size
-  low = low.min(projected)
-  high = high.max(projected)
-  var depth: float = -view.camera.to_local(corner).z
-  depth_ok = depth_ok and depth > view.camera.near and depth < view.camera.far
- check(low.x >= 0.049 and low.y >= 0.049 and high.x <= 0.951 and high.y <= 0.951 and depth_ok,label+": eight corners remain in frame with 4.9% margin")
+ for mesh in view.box.find_children("*", "MeshInstance3D", true, false):
+  if not mesh.mesh or not mesh.is_visible_in_tree(): continue
+  for index in range(8):
+   var corner: Vector3 = mesh.to_global(mesh.get_aabb().get_endpoint(index))
+   var projected: Vector2 = view.camera.unproject_position(corner)/viewport_size
+   low = low.min(projected)
+   high = high.max(projected)
+   var depth: float = -view.camera.to_local(corner).z
+   depth_ok = depth_ok and depth > view.camera.near and depth < view.camera.far
+ check(low.x >= 0.049 and low.y >= 0.049 and high.x <= 0.951 and high.y <= 0.951 and depth_ok,label+": every visible mesh corner remains in frame with 4.9% margin")
  var center: Vector2 = view.camera.unproject_position(view.pivot.global_position)/viewport_size
  check(center.distance_to(Vector2(0.5,0.5)) < 0.002,label+": centered pivot")
 
@@ -109,9 +111,9 @@ func run() -> void:
  check(view.model_bounds.get_center().is_zero_approx(),"Volumetric box has centered local bounds")
  if view.box.can_open():
   check(view.box.get_meta("original_room_geometry",false),"Selected box reuses original room geometry")
-  view.lid_button.pressed.emit()
+  view.confirm_selected()
   check(view.box.opened and is_equal_approx(view.box.lid.rotation.z,deg_to_rad(115)),"Original hinge opens to room angle")
-  view.cartridge_button.pressed.emit()
+  view.confirm_selected()
   check(view.box.cartridge_out,"Original separate cartridge can be extracted")
   view.reset_inspection()
   check(not view.box.opened and not view.box.cartridge_out,"Restore safely stows cartridge and closes lid")

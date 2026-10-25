@@ -44,18 +44,19 @@ func run() -> void:
  var front = view.box.find_child("Box_FRONT",true,false)
  check(front != null and front.get_surface_override_material(0).albedo_texture == null,"Original front mesh remains neutral without supplied cover")
  view.toggle_inspection()
- view.lid_button.pressed.emit()
- view.cartridge_button.pressed.emit()
+ view.confirm_selected()
  check(view.box.opened and view.box.cartridge_out,"Generic scanned item supports opening and cartridge extraction")
- # All eight current articulated bounds stay safely inside the perspective frame.
+ # Every visible articulated mesh stays safely inside the perspective frame.
  for yaw in [0.0,0.8,PI,4.0]:
   view.yaw = yaw
   view.pitch = 0.4
   view.zoom = view.ZOOM_MAX
   view._apply_rotation()
-  for index in 8:
-   var p: Vector2 = view.camera.unproject_position(view.pivot.to_global(view.model_bounds.get_endpoint(index)))/Vector2(view.viewport.size)
-   check(p.x >= 0.049 and p.x <= 0.951 and p.y >= 0.049 and p.y <= 0.951,"Opened box/cartridge bounds stay framed")
+  for mesh in view.box.find_children("*", "MeshInstance3D", true, false):
+   if not mesh.mesh or not mesh.is_visible_in_tree(): continue
+   for index in 8:
+    var p: Vector2 = view.camera.unproject_position(mesh.to_global(mesh.get_aabb().get_endpoint(index)))/Vector2(view.viewport.size)
+    check(p.x >= 0.049 and p.x <= 0.951 and p.y >= 0.049 and p.y <= 0.951,"Opened box/cartridge visible mesh corners stay framed")
  var saved_bytes := FileAccess.get_file_as_bytes(catalog)
  view._cancel_scan()
  check(view._scan_was_cancelled(),"Cancellation flag is explicitly observable across threads")

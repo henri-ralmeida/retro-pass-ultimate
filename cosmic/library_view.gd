@@ -6,6 +6,7 @@ signal exit_requested
 
 const InputGlyph = preload("res://cosmic/input_glyph.gd")
 const GameBox = preload("res://cosmic/game_box.gd")
+const BoxPresentation = preload("res://cosmic/box_presentation.gd")
 const DEFAULT_MANIFEST := "res://assets/local_box_art/manifest.json"
 # Public checkout contains no proprietary sleeve artwork and never invents it.
 var ITEMS: Array[Dictionary] = []
@@ -18,6 +19,9 @@ var scan_mutex := Mutex.new()
 var scan_cancelled := false
 var carousel: Node3D
 var neighbor_boxes: Array[Node3D] = []
+var manual_reader: Control
+var manual_button: Button
+var manual_status := "Manual indisponível para este jogo."
 
 func _load_items(path_override: String = "") -> void:
  ITEMS.clear()
@@ -46,6 +50,15 @@ func _load_items(path_override: String = "") -> void:
      var path := str(data.get(key, ""))
      if not path.is_empty() and not path.is_absolute_path(): path = manifest_path.get_base_dir().path_join(path)
      data[key] = path
+    var pages: Variant = data.get("manual_pages", [])
+    var resolved_pages: Array[String] = []
+    if pages is Array:
+     # Preserve an over-limit sentinel so the reader rejects rather than truncates.
+     for page in pages.slice(0,129):
+      var page_path := str(page) if page is String else ""
+      if not page_path.is_empty() and not page_path.is_absolute_path(): page_path = manifest_path.get_base_dir().path_join(page_path)
+      resolved_pages.append(page_path)
+    data["manual_pages"] = resolved_pages
     ITEMS.append(data)
  if ITEMS.is_empty():
   ITEMS.append({"id":"unavailable", "title":"Acervo indisponível", "subtitle":"MASTER SYSTEM · SEM CAPAS LOCAIS", "accent":"9dd8f2", "description":"Nenhuma capa local disponível. A caixa permanece sem arte, sem substituições fictícias."})
@@ -55,6 +68,24 @@ const DEFAULT_YAW := 0.40
 const DEFAULT_PITCH := -0.07
 const ZOOM_MIN := 0.70
 const ZOOM_MAX := 1.40
+const APPROACH_SECONDS := 0.66
+
+# Both motion tracks are caller-driven. There are no delayed tween callbacks
+# that can reopen a closed library or consume elapsed time while unfocused.
+var presentation := BoxPresentation.new()
+var approach_progress := 0.0
+var approach_target := 0.0
+var approach_busy: bool:
+ get: return approach_progress != approach_target
+var returning_to_carousel := false
+var pending_confirm := false
+var carousel_yaw := DEFAULT_YAW
+var carousel_pitch := DEFAULT_PITCH
+var return_yaw := DEFAULT_YAW
+var return_pitch := DEFAULT_PITCH
+var presentation_rotation_active := false
+var presentation_from := Vector2.ZERO
+var presentation_to := Vector2.ZERO
 
 var host: Node
 var current_index := 0
@@ -84,9 +115,7 @@ var mode_label: Label
 var help_label: Label
 var legal_label: Label
 var footer: HBoxContainer
-var parts: HBoxContainer
-var lid_button: Button
-var cartridge_button: Button
+var confirm_button: Button
 var zoom_controls: HBoxContainer
 var zoom_label: Label
 var inspect_button: Button
@@ -164,20 +193,19 @@ func _build() -> void:
  footer.add_theme_constant_override("separation",14)
  footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
  add_child(footer)
+ confirm_button = _mapped_button("confirm","Abrir","Abrir a caixa e apresentar seu cartucho",confirm_selected)
  inspect_button = _mapped_button("inspect","Inspecionar","Girar a caixa em 3D, ver a lombada e o verso",toggle_inspection)
  reset_button = _mapped_button("reset","Restaurar","Restaurar o ângulo e o zoom da caixa",reset_inspection)
  motion_button = _mapped_button("motion","Pausar","Reduzir o movimento do fundo cósmico",_toggle_motion)
  back_button = _mapped_button("back","Voltar","Voltar ao Master System",go_back)
- for button in [inspect_button,reset_button,motion_button,back_button]: footer.add_child(button)
- parts = HBoxContainer.new()
- parts.alignment = BoxContainer.ALIGNMENT_CENTER
- parts.add_theme_constant_override("separation",8)
- parts.mouse_filter = Control.MOUSE_FILTER_IGNORE
- add_child(parts)
- lid_button = _plain_button("Abrir caixa","Abrir ou fechar a tampa original",func(): box.toggle_lid(); _update_parts())
- cartridge_button = _plain_button("Retirar cartucho","Retirar ou guardar o cartucho original",func(): box.toggle_cartridge(); _update_parts())
- parts.add_child(lid_button)
- parts.add_child(cartridge_button)
+ manual_button = _plain_button("Manual","Ler o manual deste jogo",_open_manual)
+ for state in ["normal","hover","pressed","disabled"]: manual_button.add_theme_stylebox_override(state,StyleBoxEmpty.new())
+ manual_button.custom_minimum_size = Vector2(132,46)
+ for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]: footer.add_child(button)
+ manual_reader = load("res://cosmic/manual_reader.gd").new()
+ add_child(manual_reader)
+ manual_reader.configure(host)
+ manual_reader.closed.connect(_manual_closed)
  zoom_controls = HBoxContainer.new()
  zoom_controls.alignment = BoxContainer.ALIGNMENT_CENTER
  zoom_controls.add_theme_constant_override("separation",4)
@@ -415,6 +443,7 @@ func _finish_scan() -> void:
  scan_button.grab_focus()
 
 func _exit_tree() -> void:
+ presentation.teardown()
  if scan_thread != null:
   _cancel_scan()
   scan_thread.wait_to_finish()
@@ -424,29 +453,32 @@ func open() -> void:
  _build()
  if not built: return
  visible = true
- inspect_mode = false
+ _reset_presentation()
  cancel_drag()
  reset_inspection()
  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
  refresh_controls()
  layout()
- inspect_button.grab_focus()
+ confirm_button.grab_focus()
 
 func close() -> void:
+ if is_instance_valid(manual_reader): manual_reader.close()
  if scan_dialog: scan_dialog.hide()
  cancel_drag()
- inspect_mode = false
+ _reset_presentation()
  visible = false
  if viewport: viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 func navigate(direction: int) -> void:
- if inspect_mode or not visible: return
+ if inspect_mode or approach_busy or not visible: return
  var held := axis_navigation_held
  _select(posmod(current_index + direction,ITEMS.size()))
  axis_navigation_held = held
 
 func _select(index: int) -> void:
- if index < 0 or index >= ITEMS.size(): return
+ if inspect_mode or approach_busy or index < 0 or index >= ITEMS.size(): return
+ if is_instance_valid(manual_reader) and manual_reader.visible: manual_reader.close()
+ presentation.teardown()
  current_index = index
  var data: Dictionary = ITEMS[index]
  if box:
@@ -458,6 +490,8 @@ func _select(index: int) -> void:
   box.configure(data)
   pivot.add_child(box)
   if box.has_method("get_local_bounds"): model_bounds = box.get_local_bounds()
+  presentation.configure(box)
+ _refresh_manual_availability(data)
  item_title.text = data.title
  item_title.tooltip_text = data.title
  item_title.accessibility_name = data.title
@@ -503,60 +537,181 @@ func _build_neighbors() -> void:
   carousel.add_child(neighbor)
   var side := signf(float(offset))
   neighbor.position = Vector3(side * (2.05 + (abs(offset)-1)*1.25), -0.12, -1.25 - (abs(offset)-1)*0.9)
+  neighbor.set_meta("carousel_position", neighbor.position)
   neighbor.rotation.y = -side * 0.65
   neighbor.scale = Vector3.ONE * 0.86
   neighbor_boxes.append(neighbor)
- carousel.visible = not inspect_mode
+ carousel.visible = true
+
+func _can_interact() -> bool:
+ return visible and built and host.get("application_focused") != false and host.get("scene_active") != false and not scan_dialog.visible
+
+func _reduced_motion() -> bool:
+ return host.get("reduced_motion") == true
 
 func toggle_inspection() -> void:
- if not visible: return
- inspect_mode = not inspect_mode
+ if not _can_interact(): return
+ if inspect_mode:
+  go_back()
+ else:
+  _begin_inspection()
+
+func _begin_inspection() -> void:
  cancel_drag()
- reset_inspection()
- refresh_controls()
- layout()
- inspect_button.grab_focus()
+ if not inspect_mode:
+  carousel_yaw = yaw
+  carousel_pitch = pitch
+  inspect_mode = true
+ returning_to_carousel = false
+ approach_target = 1.0
+ if _reduced_motion(): approach_progress = approach_target
+ _update_inspection_view()
+ confirm_button.grab_focus()
+
+func confirm_selected() -> void:
+ if not _can_interact() or not presentation.available: return
+ pending_confirm = true
+ _begin_inspection()
+ if not approach_busy:
+  _start_presentation(_reduced_motion())
+  pending_confirm = false
+  _update_inspection_view()
+
+func _start_presentation(reduced: bool) -> void:
+ if presentation.progress == 0.0 and not presentation_rotation_active:
+  # Derive a view of BOTH interior planes from the original rig. This is not
+  # an inspection face preset: only explicit Confirm requests this orientation.
+  var source_basis: Basis = box.global_basis.inverse() * box.lid.get_parent().global_basis
+  var base_normal := (source_basis * Vector3.UP).normalized()
+  var open_lid_inside := (source_basis * (Basis(Vector3.BACK,deg_to_rad(BoxPresentation.OPEN_DEGREES)) * Vector3.DOWN)).normalized()
+  var bisector := (base_normal + open_lid_inside).normalized()
+  presentation_from = Vector2(yaw,pitch)
+  presentation_to = Vector2(-atan2(bisector.x,Vector2(bisector.y,bisector.z).length()),atan2(bisector.y,bisector.z))
+  presentation_rotation_active = true
+ presentation.confirm(reduced)
+ _apply_presentation_orientation()
+
+func _apply_presentation_orientation() -> void:
+ if not presentation_rotation_active: return
+ var weight := presentation.lid_angle / BoxPresentation.OPEN_DEGREES
+ yaw = lerp_angle(presentation_from.x,presentation_to.x,weight)
+ pitch = lerp_angle(presentation_from.y,presentation_to.y,weight)
+ pivot.basis = Basis(Vector3.UP,yaw) * Basis(Vector3.RIGHT,pitch)
 
 func _toggle_motion() -> void:
  if host.has_method("toggle_motion"): host.toggle_motion()
+ if _reduced_motion(): _advance_presentation(0.0)
  refresh_controls()
 
 func go_back() -> void:
+ if is_instance_valid(manual_reader) and manual_reader.visible:
+  manual_reader.close()
+  return
+ if not _can_interact(): return
  if inspect_mode:
-  toggle_inspection()
+  # Repeated Back remains within this path until everything is safely stowed.
+  if returning_to_carousel: return
+  cancel_drag()
+  pending_confirm = false
+  returning_to_carousel = true
+  presentation.back(_reduced_motion())
+  return_yaw = yaw
+  return_pitch = pitch
+  if presentation.progress == 0.0: approach_target = 0.0
+  _advance_presentation(0.0)
  else:
   cancel_drag()
   exit_requested.emit()
 
-func _update_parts() -> void:
- model_bounds = box.get_local_bounds()
- lid_button.text = "Fechar caixa" if box.opened else "Abrir caixa"
- cartridge_button.text = "Guardar cartucho" if box.cartridge_out else "Retirar cartucho"
- _frame_box()
+func _reset_presentation() -> void:
+ presentation.reset()
+ inspect_mode = false
+ approach_progress = 0.0
+ approach_target = 0.0
+ returning_to_carousel = false
+ pending_confirm = false
+ presentation_rotation_active = false
+
+func _update_inspection_view() -> void:
+ if box: model_bounds = box.get_local_bounds()
+ layout()
+
+func _advance_presentation(delta: float) -> void:
+ if not _can_interact():
+  cancel_drag()
+  return
+ if not is_finite(delta) or delta < 0.0: return
+ var reduced := _reduced_motion()
+ var remaining := delta
+ # Finish stowing before withdrawing the camera; no orphaned cartridge.
+ if returning_to_carousel:
+  if reduced: presentation.back(true)
+  else:
+   var stow_seconds := presentation.progress * BoxPresentation.TOTAL_SECONDS
+   presentation.tick(remaining, true)
+   remaining = maxf(0.0, remaining - stow_seconds)
+  _apply_presentation_orientation()
+  if presentation.progress == 0.0 and approach_target != 0.0:
+   return_yaw = yaw
+   return_pitch = pitch
+   approach_target = 0.0
+ if reduced: approach_progress = approach_target
+ else:
+  var approach_seconds := absf(approach_target - approach_progress) * APPROACH_SECONDS
+  approach_progress = move_toward(approach_progress, approach_target, remaining / APPROACH_SECONDS)
+  remaining = maxf(0.0, remaining - approach_seconds)
+ if returning_to_carousel and approach_target == 0.0:
+  # Return to the actual departure pose, never to an arbitrary face preset.
+  var weight := BoxPresentation._ease(approach_progress)
+  yaw = lerp_angle(carousel_yaw, return_yaw, weight)
+  pitch = lerp_angle(carousel_pitch, return_pitch, weight)
+  pivot.basis = Basis(Vector3.UP,yaw) * Basis(Vector3.RIGHT,pitch)
+ if approach_progress == 1.0 and not returning_to_carousel:
+  if pending_confirm:
+   _start_presentation(reduced)
+   pending_confirm = false
+  if reduced and presentation.busy:
+   if presentation.state in [&"closing", &"returning"]: presentation.back(true)
+   else: presentation.confirm(true)
+  elif remaining > 0.0: presentation.tick(remaining, true)
+  _apply_presentation_orientation()
+ if returning_to_carousel and approach_progress == 0.0 and presentation.progress == 0.0:
+  inspect_mode = false
+  returning_to_carousel = false
+  presentation_rotation_active = false
+  yaw = carousel_yaw
+  pitch = carousel_pitch
+  zoom = 1.0
+  pivot.basis = Basis(Vector3.UP,yaw) * Basis(Vector3.RIGHT,pitch)
+  confirm_button.grab_focus()
+ _update_inspection_view()
 
 func reset_inspection() -> void:
  cancel_drag()
+ if returning_to_carousel or approach_busy: return
+ presentation_rotation_active = false
  if box:
-  box.reset_parts()
+  presentation.back(_reduced_motion())
   model_bounds = box.get_local_bounds()
-  if lid_button: _update_parts()
  yaw = DEFAULT_YAW
  pitch = DEFAULT_PITCH
  zoom = 1.0
  _apply_rotation()
 
 func rotate_inspection(relative: Vector2) -> void:
- if not inspect_mode: return
+ if not inspect_mode or approach_busy or returning_to_carousel: return
+ presentation_rotation_active = false
  yaw = wrapf(yaw + relative.x * 0.008,-PI,PI)
  pitch = wrapf(pitch + relative.y * 0.008,-PI,PI)
  _apply_rotation()
 
 func zoom_inspection(amount: float) -> void:
- if not inspect_mode: return
+ if not inspect_mode or approach_busy or returning_to_carousel: return
  zoom = clampf(zoom+amount,ZOOM_MIN,ZOOM_MAX)
  _frame_box()
 
 func cancel_drag() -> void:
+ if is_instance_valid(manual_reader): manual_reader.cancel_drag()
  dragging = false
  rotate_axis = Vector2.ZERO
  zoom_axis = 0.0
@@ -572,16 +727,36 @@ func _frame_box() -> void:
  if not camera or viewport_container.size.y <= 0.0: return
  var ratio := viewport_container.size.x/maxf(viewport_container.size.y,1.0)
  var tangent := tan(deg_to_rad(camera.fov)*0.5)
- var distance := 0.0
- for index in range(8):
-  var point := pivot.basis * model_bounds.get_endpoint(index)
-  # Solve the perspective frustum per vertex, including its depth. This keeps
-  # a 5% border at maximum zoom for every yaw/pitch, not just front-facing.
-  distance = maxf(distance,point.z + maxf(absf(point.y),absf(point.x)/ratio) / tangent * (1.56 if inspect_mode else 1.12) / zoom)
- if not inspect_mode and not neighbor_boxes.is_empty():
-  distance = maxf(distance, 3.35 / (tangent*ratio))
+ var collection_distance := 0.0
+ var inspect_distance := 0.0
+ var points := PackedVector3Array()
+ # A union AABB invents corners combining the cartridge's forward depth with
+ # the open lid's distant edge. Fit the actual visible mesh bounds instead.
+ var to_pivot := pivot.global_transform.affine_inverse()
+ for mesh in box.find_children("*", "MeshInstance3D", true, false):
+  if not mesh.mesh or not mesh.is_visible_in_tree(): continue
+  var local_pose: Transform3D = to_pivot * mesh.global_transform
+  for index in range(8):
+   points.append(pivot.basis * (local_pose * mesh.get_aabb().get_endpoint(index)))
+ if points.is_empty():
+  for index in range(8): points.append(pivot.basis * model_bounds.get_endpoint(index))
+ for point in points:
+  var extent := maxf(absf(point.y),absf(point.x)/ratio) / tangent
+  # Keep over 5% at maximum zoom. Collection is just far enough behind the
+  # default inspection framing to retain a real, smooth forward approach.
+  collection_distance = maxf(collection_distance, point.z + extent * 1.65)
+  inspect_distance = maxf(inspect_distance, point.z + extent * 1.56 / zoom)
+ if not neighbor_boxes.is_empty(): collection_distance = maxf(collection_distance, 3.35 / (tangent*ratio))
+ var weight := BoxPresentation._ease(approach_progress)
+ var distance := lerpf(collection_distance, inspect_distance, weight)
  camera.position = Vector3(0,0,maxf(distance,1.0))
  camera.far = maxf(30.0,distance+10.0)
+ # Neighbors recede outside the view instead of popping out at entry.
+ for neighbor in neighbor_boxes:
+  var origin: Vector3 = neighbor.get_meta("carousel_position")
+  neighbor.position = origin + Vector3(signf(origin.x) * 30.0 * weight, 0.0, 0.0)
+ carousel.position.z = -2.0 * weight
+ carousel.visible = approach_progress < 1.0
  if zoom_label: zoom_label.text = "%d%%" % roundi(zoom*100.0)
 
 func refresh_controls() -> void:
@@ -589,24 +764,33 @@ func refresh_controls() -> void:
  var gamepad: bool = host.get("input_device") == "gamepad"
  var name_value: String = str(host.get("active_pad_name"))
  var profile = host.get("input_profile")
- for button in [inspect_button,reset_button,motion_button,back_button]:
+ for button in [confirm_button,inspect_button,reset_button,motion_button,back_button]:
   var action: String = button.get_meta("action","")
   var glyph = button.find_child("InputGlyph",true,false)
   if glyph and profile:
    glyph.symbol = profile.glyph(action,gamepad,name_value)
    glyph.family = profile.family(name_value) if gamepad else "keyboard"
+ var presented := presentation.state == &"presented" and not returning_to_carousel
+ confirm_button.visible = not presented
+ if is_instance_valid(manual_button):
+  manual_button.visible = presented
+  manual_button.disabled = not manual_status.is_empty()
+ confirm_button.disabled = not presentation.available
+ var confirm_label = confirm_button.find_child("ActionLabel",true,false)
+ var confirm_text := "Apresentado" if presentation.state == &"presented" else "Abrir"
+ if confirm_label: confirm_label.text = confirm_text
+ else: confirm_button.text = confirm_text
+ confirm_button.accessibility_name = "Abrir caixa e apresentar seu cartucho"
  var action_label = inspect_button.find_child("ActionLabel",true,false)
- if action_label: action_label.text = "Concluir" if inspect_mode else "Inspecionar"
- else: inspect_button.text = "Concluir" if inspect_mode else "Inspecionar"
+ if action_label: action_label.text = "Voltar" if inspect_mode else "Inspecionar"
+ else: inspect_button.text = "Voltar" if inspect_mode else "Inspecionar"
  inspect_button.accessibility_name = "Concluir inspeção" if inspect_mode else "Inspecionar caixa"
  back_button.accessibility_description = "Voltar à coleção" if inspect_mode else "Voltar ao Master System"
  var motion_label = motion_button.find_child("ActionLabel",true,false)
  if motion_label: motion_label.text = "Animar" if host.get("reduced_motion") == true else "Pausar"
  motion_button.accessibility_name = "Animar fundo" if host.get("reduced_motion") == true else "Pausar movimento do fundo"
- reset_button.visible = inspect_mode
- carousel.visible = not inspect_mode
- parts.visible = inspect_mode and box.can_open()
- zoom_controls.visible = inspect_mode
+ reset_button.visible = inspect_mode and not approach_busy and not returning_to_carousel
+ zoom_controls.visible = inspect_mode and not returning_to_carousel
  help_label.text = "Arrastar / setas: girar · +/−: zoom" if inspect_mode else "←  →  selecionar jogo"
  if gamepad:
   help_label.text = "Analógico: girar · direito: zoom" if inspect_mode else "Direcional: selecionar jogo"
@@ -687,11 +871,9 @@ func layout() -> void:
   card_textures[index].visible = false
   for child in cards[index].get_children():
    if child is Label and child.name != "CardTitle": child.visible = false
- viewport_container.position = Vector2(margin+24,102)
- viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-324))
- if inspect_mode:
-  viewport_container.position = Vector2(margin+24,88)
-  viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-292))
+ var approach_weight := BoxPresentation._ease(approach_progress)
+ viewport_container.position = Vector2(margin+24,lerpf(102.0,88.0,approach_weight))
+ viewport_container.size = Vector2(s.x-margin*2-48,maxf(100,s.y-lerpf(324.0,292.0,approach_weight)))
  item_title.visible = not inspect_mode
  item_subtitle.visible = not inspect_mode and ITEMS.size() == 1
  chapter.visible = not inspect_mode
@@ -707,13 +889,17 @@ func layout() -> void:
  mode_label.visible = false
  mode_label.position = Vector2(0,88 if inspect_mode else s.y-151)
  mode_label.size = Vector2(s.x,24)
- parts.position = Vector2(s.x*0.5-240,s.y-187)
- parts.size = Vector2(340,38)
- zoom_controls.position = Vector2(s.x*0.5+112 if box.can_open() else s.x*0.5-64,s.y-187)
+ zoom_controls.position = Vector2(s.x*0.5-64,s.y-187)
  zoom_controls.size = Vector2(128,38)
  help_label.position = Vector2(16,s.y-130)
  help_label.size = Vector2(s.x-32,24)
  help_label.add_theme_font_size_override("font_size",13 if narrow else 14)
+ # Five contextual actions fit at supported narrow widths without clipping.
+ for button in [confirm_button,inspect_button,reset_button,manual_button,motion_button,back_button]:
+  button.custom_minimum_size.x = 132.0 if narrow else 144.0
+  var label = button.find_child("ActionLabel",true,false)
+  if label: label.add_theme_font_size_override("font_size",16 if narrow else 18)
+ footer.add_theme_constant_override("separation",8 if narrow else 14)
  footer.position = Vector2(margin,s.y-96)
  footer.size = Vector2(s.x-margin*2.0,48)
  legal_label.position = Vector2(16,s.y-28)
@@ -723,6 +909,9 @@ func layout() -> void:
  scan_button.visible = not inspect_mode
  refresh_controls()
  _frame_box()
+ if is_instance_valid(manual_reader):
+  manual_reader.move_to_front()
+  manual_reader.layout()
  queue_redraw()
 
 func _draw() -> void:
@@ -744,9 +933,17 @@ func _draw() -> void:
 func _activate_focused() -> void:
  var focused := get_viewport().gui_get_focus_owner()
  if focused is Button and is_ancestor_of(focused) and focused.is_visible_in_tree():
-  focused.pressed.emit()
+  if focused.disabled: return
+  # Collection cards represent the selected game; other explicit UI controls
+  # keep their normal confirm action (scanner, accessibility tools, manuals).
+  if focused in cards:
+   var index := cards.find(focused)
+   if index != current_index: _select(index)
+   confirm_selected()
+  else:
+   focused.pressed.emit()
  else:
-  toggle_inspection()
+  confirm_selected()
 
 func _move_focus(direction: int) -> void:
  var focused := get_viewport().gui_get_focus_owner()
@@ -757,6 +954,11 @@ func _move_focus(direction: int) -> void:
 
 func handle_event(event: InputEvent) -> bool:
  if not visible or not built: return false
+ if is_instance_valid(manual_reader) and manual_reader.visible:
+  if host.get("application_focused") == false or host.get("scene_active") == false:
+   manual_reader.cancel_drag()
+   return true
+  return manual_reader.handle_event(event)
  if scan_dialog.visible: return false
  if host.get("application_focused") == false or host.get("scene_active") == false:
   cancel_drag()
@@ -783,7 +985,9 @@ func handle_event(event: InputEvent) -> bool:
    dragging = false
    return was_dragging
   var inside := viewport_container.get_global_rect().has_point(event.position)
-  if inspect_mode and inside:
+  for button in all_buttons:
+   if button.is_visible_in_tree() and button.get_global_rect().has_point(event.position): inside = false
+  if inspect_mode and not approach_busy and not returning_to_carousel and inside:
    if event.button_index == MOUSE_BUTTON_LEFT:
     dragging = event.pressed
     return true
@@ -852,8 +1056,9 @@ func handle_event(event: InputEvent) -> bool:
  return false
 
 func _process(delta: float) -> void:
- if scan_thread != null and not scan_thread.is_alive(): _finish_scan()
+ if scan_thread != null and not scan_thread.is_alive() and not inspect_mode: _finish_scan()
  if not visible or not built: return
+ if is_instance_valid(manual_reader) and manual_reader.visible: return
  if host.get("application_focused") == false or host.get("scene_active") == false:
   cancel_drag()
   return
@@ -861,5 +1066,34 @@ func _process(delta: float) -> void:
   cancel_drag()
   return
  if inspect_mode:
+  _advance_presentation(delta)
   if not rotate_axis.is_zero_approx(): rotate_inspection(rotate_axis*delta*150.0)
   if not is_zero_approx(zoom_axis): zoom_inspection(zoom_axis*delta*0.55)
+
+
+func _refresh_manual_availability(item: Dictionary) -> void:
+ if not is_instance_valid(manual_reader) or not is_instance_valid(manual_button): return
+ manual_status = manual_reader.status_for(item)
+ manual_button.disabled = not manual_status.is_empty()
+ manual_button.tooltip_text = manual_status if not manual_status.is_empty() else "Ler as páginas locais deste jogo"
+ manual_button.accessibility_description = manual_button.tooltip_text
+
+func _open_manual() -> void:
+ if not _can_interact() or presentation.state != &"presented" or returning_to_carousel: return
+ if current_index < 0 or current_index >= ITEMS.size(): return
+ cancel_drag()
+ _refresh_manual_availability(ITEMS[current_index])
+ if not manual_status.is_empty(): return
+ if manual_reader.open_item(ITEMS[current_index]):
+  viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+  manual_reader.move_to_front()
+ else:
+  manual_status = manual_reader.last_error
+  manual_button.tooltip_text = manual_status
+  manual_button.disabled = true
+
+func _manual_closed() -> void:
+ cancel_drag()
+ if is_instance_valid(viewport):
+  viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if visible else SubViewport.UPDATE_DISABLED
+ if visible and is_instance_valid(manual_button) and not manual_button.disabled: manual_button.grab_focus()

@@ -13,7 +13,9 @@ Este repositório contém código-fonte, não um executável Windows já validad
 ## Interações
 
 - X entra no sistema e Z volta no teclado. Enter/Espaço continuam como alternativas de confirmação.
-- I / Inspecionar: manipulação 3D livre separada da história, tanto no console quanto na caixa. Na caixa, não há giro automático nem atalhos de vistas fixas; arraste para escolher qualquer ângulo.
+- I / Inspecionar: manipulação 3D livre separada da história, tanto no console quanto na caixa. A caixa se aproxima fechada; arraste para escolher qualquer ângulo, sem giro automático nem presets de faces.
+- X / Confirmar na caixa: aproxima, abre a tampa pela dobradiça e apresenta o mesmo cartucho. Z / Voltar recolhe o cartucho, fecha a caixa e retorna à coleção. Movimento reduzido aplica os estados sem transição.
+- Manual, quando a caixa está apresentada: abre as páginas locais daquele item, se fornecidas. Setas navegam, roda ou +/− ampliam, arraste desloca a página, R ajusta e Z fecha somente o leitor.
 - Arraste para girar em dois eixos; roda ou +/− para zoom; setas também giram.
 - R / Restaurar: orientação e zoom iniciais. Esc / Z / I / Voltar: sair.
 - M: pausar/retomar movimento.
@@ -31,7 +33,7 @@ Somente Master System. Entrar aproxima a câmera do console e revela uma bibliot
 
 A seleção exibe dois controles reutilizados, cabos com comprimento nominal de 2 m organizados em voltas suaves, plugues moldados com alívio de tensão, caixa aberta ao fundo e um único cartucho do mesmo item do catálogo. Caixa e cartucho mantêm a escala nativa; ao voltar da biblioteca, o conjunto acompanha a seleção atual, sem misturar mídias. A caixa de fundo fica à esquerda, sem sobrepor o console, e mostra verso, lombada e frente em perspectiva própria; a câmera e os controles do console são preservados. A inspeção dedicada continua isolando o console. O carregador opcional de hardware local restaura os materiais e estampas REV2; sem esse recurso, a interface informa a ausência das texturas em vez de apresentar o controle neutro como equivalente. Veja [recursos locais](docs/HARDWARE_LOCAL.md) e [geometria da exposição](docs/EXPOSICAO_3D.md).
 
-O encaixe é uma apresentação estática com abertura visual reversível da carcaça, não a animação de inserção ainda planejada. A articulação da caixa foi corrigida no runtime sem modificar sua geometria fechada ou o GLB original. Labels só aparecem quando fornecidos explicitamente para aquele item. Wheel e manual reais ainda não foram fornecidos; o leitor integrado e a obtenção online permanecem pendentes.
+O encaixe é uma apresentação estática com abertura visual reversível da carcaça, não a animação de inserção ainda planejada. A articulação da caixa foi corrigida no runtime sem modificar sua geometria fechada ou o GLB original. Labels só aparecem quando fornecidos explicitamente para aquele item. Wheel e manual reais ainda não foram fornecidos. O leitor integrado aceita páginas PNG/JPEG locais explicitamente vinculadas ao jogo, sem substituir páginas ausentes; PDF e obtenção online permanecem pendentes. Veja [manual local](docs/MANUAL_LOCAL.md). A abertura da caixa e a extração do cartucho são apresentação, não execução nem inserção animada no console.
 
 ## Testes
 
